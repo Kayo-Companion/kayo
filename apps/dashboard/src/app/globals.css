@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 36 100% 97%;
+  --foreground: 16 41% 13%;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: #FFF8F2;
+  color: #2D1B14;
+  font-feature-settings: "palt";
+}
+
+/* Fade-slide-in for hero animations */
+.animate-fade-in {
+  animation: fadeSlideIn 0.8s ease-out forwards;
+  opacity: 0;
+}
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-600 { animation-delay: 0.6s; }
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Glass card baseline */
+.glass-card {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background-color: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 20px 60px -20px rgba(232, 93, 93, 0.18);
+}
+
+/* Focus visible ring (warm) */
+:focus-visible {
+  outline: 2px solid #E85D5D;
+  outline-offset: 2px;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(232, 93, 93, 0.25);
+  color: #2D1B14;
+}
