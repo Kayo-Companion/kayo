@@ -250,6 +250,11 @@ class CallBridge:
         # that event we flip interrupt_response back to True so the rest of
         # the call has normal barge-in behavior.
         self._greeting_done = False
+        # Monotonic time at which the greeting finished. Used to ignore any
+        # user transcription that arrives in the first ~1.5s after — those
+        # are almost always speakerphone echo / background noise hallucinated
+        # as Japanese by gpt-4o-transcribe, not real user speech.
+        self._greeting_done_at: float | None = None
         # Tracks whether a response is currently being generated server-side.
         # Used to avoid firing duplicate `response.create` calls that race
         # semantic_vad's auto-create (when it does fire).
@@ -392,6 +397,7 @@ class CallBridge:
                     # and transcription and break input audio entirely.
                     if not self._greeting_done:
                         self._greeting_done = True
+                        self._greeting_done_at = asyncio.get_event_loop().time()
                         s = get_settings()
                         await openai_ws.send(
                             json.dumps(
@@ -446,6 +452,10 @@ class CallBridge:
                     # the session post-greeting). Fire response.create after a
                     # short patience pause — and only if all of these hold:
                     #   - greeting is finished (otherwise we'd race the opening)
+                    #   - we're past the post-greeting noise grace period
+                    #     (immediately-after-greeting transcriptions are
+                    #     almost always speakerphone echo or AI-screening
+                    #     noise hallucinated as Japanese by the transcriber)
                     #   - no response is already mid-flight
                     #   - the user actually said something substantive
                     #     (not a back-channel like "うん" / "そう")
@@ -454,8 +464,18 @@ class CallBridge:
                     if self._pending_response_task and not self._pending_response_task.done():
                         self._pending_response_task.cancel()
                         self._pending_response_task = None
+                    GRACE_S = 1.5
+                    in_grace = (
+                        self._greeting_done_at is not None
+                        and (asyncio.get_event_loop().time() - self._greeting_done_at) < GRACE_S
+                    )
                     if not self._greeting_done:
                         pass
+                    elif in_grace:
+                        logger.info(
+                            "Skip response.create: post-greeting grace period (transcript=%r)",
+                            text,
+                        )
                     elif self._response_in_progress:
                         logger.debug("Skip response.create: one already in progress")
                     elif is_backchannel(text):
