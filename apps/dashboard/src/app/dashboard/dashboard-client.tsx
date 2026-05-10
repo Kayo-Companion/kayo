@@ -1,15 +1,14 @@
 "use client";
 
 import {
-  Phone,
   Clock,
   Plus,
   ShoppingBag,
   UserPlus,
   Settings,
   PhoneIncoming,
+  ChevronRight,
 } from "lucide-react";
-import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -101,13 +100,7 @@ export function DashboardClient({ family, seniors }: Props) {
               </Link>
             </div>
             {seniors.map((s) => (
-              <SeniorCard
-                key={s.id}
-                senior={s}
-                familyHasMinutes={Boolean(
-                  family && family.minutes_used < family.minutes_limit
-                )}
-              />
+              <SeniorCard key={s.id} senior={s} />
             ))}
           </div>
         )}
@@ -214,111 +207,44 @@ function UsageCard({ family }: { family: Family }) {
   );
 }
 
-function SeniorCard({
-  senior,
-  familyHasMinutes,
-}: {
-  senior: Senior;
-  familyHasMinutes: boolean;
-}) {
-  const [calling, setCalling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
-  const callNow = async () => {
-    setCalling(true);
-    setError(null);
-    setSuccess(false);
-    try {
-      const res = await fetch("/api/calls/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ senior_id: senior.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "通話の発信に失敗しました。");
-      } else {
-        setSuccess(true);
-      }
-    } catch {
-      setError("通信エラーが発生しました。");
-    } finally {
-      setCalling(false);
-    }
-  };
-
+function SeniorCard({ senior }: { senior: Senior }) {
   const schedule = senior.schedule ?? [];
-
   return (
-    <GlassCard className="p-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 font-serif text-xl font-medium text-warm-brown">
-            {senior.name}
-            <span className="text-xs text-warm-gray">{senior.phone}</span>
-            <Link
-              href={`/dashboard/seniors/${senior.id}`}
-              aria-label={`${senior.name}の設定`}
-              className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-full text-warm-gray transition-colors hover:bg-rose-100 hover:text-coral"
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
-          </div>
-          {!senior.is_self && senior.introducer_name && (
-            <div className="text-xs text-warm-gray">
-              紹介者: {senior.introducer_relationship}の{senior.introducer_name}さん
+    <Link
+      href={`/dashboard/seniors/${senior.id}`}
+      className="group block"
+    >
+      <GlassCard className="p-6 transition-all group-hover:-translate-y-0.5 group-hover:border-coral/40">
+        <div className="flex items-center gap-4">
+          <div className="flex-1 space-y-1">
+            <div className="font-serif text-xl font-medium text-warm-brown">
+              {senior.name}
+              <span className="ml-2 text-xs text-warm-gray">{senior.phone}</span>
             </div>
-          )}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-            <Clock className="h-3.5 w-3.5 text-coral" />
-            {schedule.length === 0 ? (
-              <span className="text-xs text-warm-gray">スケジュール未設定</span>
-            ) : (
-              schedule.map((s, i) => (
-                <span
-                  key={i}
-                  className="rounded-full border border-rose-300/50 bg-white/70 px-2 py-0.5 text-xs text-warm-brown"
-                >
-                  {WEEKDAY_LABELS[s.weekday] ?? s.weekday} {s.time}
-                </span>
-              ))
+            {!senior.is_self && senior.introducer_name && (
+              <div className="text-xs text-warm-gray">
+                紹介者: {senior.introducer_relationship}の{senior.introducer_name}さん
+              </div>
             )}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+              <Clock className="h-3.5 w-3.5 text-coral" />
+              {schedule.length === 0 ? (
+                <span className="text-xs text-warm-gray">スケジュール未設定</span>
+              ) : (
+                schedule.map((s, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full border border-rose-300/50 bg-white/70 px-2 py-0.5 text-xs text-warm-brown"
+                  >
+                    {WEEKDAY_LABELS[s.weekday] ?? s.weekday} {s.time}
+                  </span>
+                ))
+              )}
+            </div>
           </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-warm-gray transition-colors group-hover:text-coral" />
         </div>
-
-        <div className="flex flex-col items-stretch gap-2 md:items-end">
-          <Button
-            variant="primary"
-            size="md"
-            className="group whitespace-nowrap"
-            onClick={callNow}
-            disabled={calling || !familyHasMinutes}
-          >
-            {calling ? (
-              "発信中..."
-            ) : (
-              <>
-                <Phone className="h-4 w-4" />
-                今すぐ電話
-              </>
-            )}
-          </Button>
-          {!familyHasMinutes && (
-            <span className="text-[10px] text-warm-gray">
-              ※ 残り分数がありません
-            </span>
-          )}
-          {success && (
-            <span className="text-[10px] text-emerald-600">
-              ✓ 発信しました。{senior.phone} に電話がかかります。
-            </span>
-          )}
-          {error && (
-            <span className="text-[10px] text-coral">{error}</span>
-          )}
-        </div>
-      </div>
-    </GlassCard>
+      </GlassCard>
+    </Link>
   );
 }

@@ -81,6 +81,8 @@ class SupabaseDB:
             introducer_relationship=row.get("introducer_relationship"),
             health_notes=row.get("health_notes"),
             is_active=row.get("is_active", True),
+            emergency_contact_phone=row.get("emergency_contact_phone"),
+            emergency_on_no_answer=row.get("emergency_on_no_answer", False),
         )
 
     async def get_senior(self, senior_id: str) -> Senior | None:

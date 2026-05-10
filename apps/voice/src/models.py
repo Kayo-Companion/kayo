@@ -55,6 +55,10 @@ class Senior(BaseModel):
     introducer_relationship: str | None = None
     health_notes: str | None = None  # free-text "話したいこと"
     is_active: bool = True
+    # Emergency contact: SMS sent here when an outbound call ends with
+    # no-answer / busy / failed AND emergency_on_no_answer is true.
+    emergency_contact_phone: str | None = None
+    emergency_on_no_answer: bool = False
 
 
 class Family(BaseModel):

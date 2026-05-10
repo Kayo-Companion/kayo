@@ -154,6 +154,67 @@ async def twilio_stream(websocket: WebSocket, senior_id: str) -> None:
             logger.exception("Failed to summarize/notify for call %s", call.id)
 
 
+@router.post("/twilio/call-status")
+async def twilio_call_status(
+    request: Request,
+    CallSid: str = Form(...),  # noqa: N803
+    CallStatus: str = Form(...),  # noqa: N803
+    To: str = Form(...),  # noqa: N803
+) -> Response:
+    """Twilio posts here when an outbound call ends (we wire the URL up in
+    `place_outbound_call`). If the call ended in `no-answer` / `busy` /
+    `failed` AND the senior has emergency_on_no_answer enabled, send an SMS
+    to the configured emergency contact.
+    """
+    senior_id = request.query_params.get("senior_id")
+    logger.info(
+        "Call status callback: sid=%s status=%s to=%s senior=%s",
+        CallSid, CallStatus, To, senior_id,
+    )
+
+    NO_ANSWER_STATUSES = {"no-answer", "busy", "failed"}
+    if CallStatus not in NO_ANSWER_STATUSES:
+        return Response(status_code=204)
+
+    db = get_db()
+    senior = await db.get_senior(senior_id) if senior_id else None
+    if senior is None:
+        # Last-resort lookup by To number — handles the case where senior_id
+        # got dropped from the callback URL.
+        senior = await db.find_senior_by_phone(To)
+    if senior is None:
+        logger.warning("Call-status: no senior matched for %s / %s", senior_id, To)
+        return Response(status_code=204)
+
+    if not senior.emergency_on_no_answer or not senior.emergency_contact_phone:
+        return Response(status_code=204)
+
+    # Format current time in the senior's call timezone for the SMS.
+    try:
+        import pytz
+        tz = pytz.timezone(senior.call_timezone or "Asia/Tokyo")
+    except Exception:
+        import pytz
+        tz = pytz.timezone("Asia/Tokyo")
+    now = datetime.now(tz)
+    when = f"{now.month}月{now.day}日 {now.hour}時{now.minute:02d}分頃"
+
+    body = (
+        f"【カヨ】{senior.name}さん（{when}）にお電話しましたが、"
+        f"お出になりませんでした。"
+    )
+    try:
+        await send_sms(to=senior.emergency_contact_phone, body=body)
+        logger.info(
+            "No-answer SMS sent to %s for senior %s",
+            senior.emergency_contact_phone, senior.id,
+        )
+    except Exception:
+        logger.exception("Failed to send no-answer SMS for senior %s", senior.id)
+
+    return Response(status_code=204)
+
+
 def _twiml_response(body: str) -> Response:
     return Response(content=body, media_type="application/xml")
 
@@ -196,6 +257,9 @@ async def place_outbound_call(
     client = _twilio_client()
     qs = urlencode({"senior_id": senior_id})
     twiml_url = f"{settings.voice_api_url}/twilio/incoming?{qs}"
+    # Twilio posts the final call status here when the call ends. We use it
+    # to fire the no-answer emergency SMS (if the senior has it enabled).
+    status_callback_url = f"{settings.voice_api_url}/twilio/call-status?{qs}"
 
     try:
         call = client.calls.create(
@@ -203,6 +267,9 @@ async def place_outbound_call(
             from_=settings.twilio_phone_number,
             url=twiml_url,
             timeout=30,
+            status_callback=status_callback_url,
+            status_callback_method="POST",
+            status_callback_event=["completed"],
             # DetectMessageEnd waits through pre-recorded announcements
             # (Japanese carrier scam warnings, voicemail greetings, etc.)
             # so our webhook fires only when the line is clear and the

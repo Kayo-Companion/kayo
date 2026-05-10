@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { normalizePhoneE164 } from "@/lib/phone";
 
 type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 const WEEKDAYS = new Set<Weekday>(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
@@ -18,9 +19,21 @@ function validSchedule(
   );
 }
 
+interface PatchBody {
+  schedule?: unknown;
+  emergency_on_no_answer?: unknown;
+  emergency_contact_phone?: unknown;
+}
+
 /**
- * Update a senior's settings. Currently scoped to schedule edits — the only
- * thing the dashboard exposes for now. Owner check via family_id ↔ user_id.
+ * Update a senior's settings. Owner check via family_id ↔ user_id.
+ *
+ * Accepts any subset of:
+ *   - schedule
+ *   - emergency_on_no_answer (boolean)
+ *   - emergency_contact_phone (string, normalized to E.164; empty/null clears)
+ *
+ * Validates each field independently so partial updates work.
  */
 export async function PATCH(
   request: Request,
@@ -35,9 +48,50 @@ export async function PATCH(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as { schedule?: unknown };
-  if (!validSchedule(body.schedule)) {
-    return NextResponse.json({ error: "invalid_schedule" }, { status: 400 });
+  const body = (await request.json()) as PatchBody;
+
+  const update: Record<string, unknown> = {};
+
+  if (body.schedule !== undefined) {
+    if (!validSchedule(body.schedule)) {
+      return NextResponse.json({ error: "invalid_schedule" }, { status: 400 });
+    }
+    update.schedule = body.schedule;
+  }
+
+  if (body.emergency_on_no_answer !== undefined) {
+    if (typeof body.emergency_on_no_answer !== "boolean") {
+      return NextResponse.json(
+        { error: "invalid_emergency_on_no_answer" },
+        { status: 400 }
+      );
+    }
+    update.emergency_on_no_answer = body.emergency_on_no_answer;
+  }
+
+  if (body.emergency_contact_phone !== undefined) {
+    const raw = body.emergency_contact_phone;
+    if (raw === null || raw === "") {
+      update.emergency_contact_phone = null;
+    } else if (typeof raw === "string") {
+      const normalized = normalizePhoneE164(raw);
+      if (!normalized) {
+        return NextResponse.json(
+          { error: "invalid_emergency_phone" },
+          { status: 400 }
+        );
+      }
+      update.emergency_contact_phone = normalized;
+    } else {
+      return NextResponse.json(
+        { error: "invalid_emergency_phone" },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
 
   // Confirm ownership: senior.family_id must belong to a family.user_id == user.id.
@@ -59,12 +113,30 @@ export async function PATCH(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const { error } = await supabase
-    .from("seniors")
-    .update({ schedule: body.schedule })
-    .eq("id", id);
+  const { error } = await supabase.from("seniors").update(update).eq("id", id);
   if (error) {
     console.error("seniors update failed:", error);
+    // If the emergency_* columns aren't migrated yet, retry without them.
+    if (
+      "emergency_on_no_answer" in update ||
+      "emergency_contact_phone" in update
+    ) {
+      const fallback = { ...update };
+      delete fallback.emergency_on_no_answer;
+      delete fallback.emergency_contact_phone;
+      if (Object.keys(fallback).length > 0) {
+        const { error: fbErr } = await supabase
+          .from("seniors")
+          .update(fallback)
+          .eq("id", id);
+        if (!fbErr) {
+          return NextResponse.json(
+            { ok: true, warning: "emergency_columns_missing" },
+            { status: 200 }
+          );
+        }
+      }
+    }
     return NextResponse.json({ error: "update_failed" }, { status: 500 });
   }
 
