@@ -48,21 +48,40 @@ export async function POST(request: Request) {
   const voiceUrl = process.env.VOICE_API_URL;
   const apiKey = process.env.VOICE_INTERNAL_API_KEY;
   if (!voiceUrl || !apiKey) {
+    console.error(
+      "voice_not_configured: VOICE_API_URL or VOICE_INTERNAL_API_KEY missing"
+    );
     return NextResponse.json({ error: "voice_not_configured" }, { status: 500 });
   }
 
-  const res = await fetch(`${voiceUrl}/calls/start`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Api-Key": apiKey,
-    },
-    body: JSON.stringify({ senior_id }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
+  let res: Response;
+  try {
+    res = await fetch(`${voiceUrl}/calls/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
+      body: JSON.stringify({ senior_id }),
+    });
+  } catch (err) {
+    // Most common cause: VOICE_API_URL points at a dead/local URL from
+    // Vercel's perspective. Surface that clearly in logs.
+    console.error(
+      `voice_unreachable: fetch to ${voiceUrl}/calls/start threw:`,
+      err
+    );
     return NextResponse.json(
-      { error: data.detail ?? "call_failed" },
+      { error: "voice_unreachable", detail: String(err).slice(0, 200) },
+      { status: 502 }
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error(
+      `voice service returned ${res.status}:`,
+      data?.detail ?? data?.error ?? "(no body)"
+    );
+    return NextResponse.json(
+      { error: data.detail ?? data.error ?? "call_failed", status: res.status },
       { status: res.status }
     );
   }
