@@ -11,6 +11,7 @@ interface CreateSeniorPayload {
   schedule: { weekday: Weekday; time: string }[];
   introducerName?: string;
   introducerRelationship?: string;
+  agentName?: string;
 }
 
 /**
@@ -51,6 +52,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "no_family" }, { status: 404 });
   }
 
+  const agentName = data.agentName?.trim() || null;
+
   const { data: senior, error } = await supabase
     .from("seniors")
     .insert({
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
       introducer_relationship: isFamily ? data.introducerRelationship ?? null : null,
       health_notes: null,
       is_active: true,
+      agent_name: agentName,
     })
     .select("id")
     .single();

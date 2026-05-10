@@ -23,6 +23,7 @@ interface PatchBody {
   schedule?: unknown;
   emergency_on_no_answer?: unknown;
   emergency_contact_phone?: unknown;
+  agent_name?: unknown;
 }
 
 /**
@@ -67,6 +68,29 @@ export async function PATCH(
       );
     }
     update.emergency_on_no_answer = body.emergency_on_no_answer;
+  }
+
+  if (body.agent_name !== undefined) {
+    if (body.agent_name === null || body.agent_name === "") {
+      update.agent_name = null;
+    } else if (typeof body.agent_name === "string") {
+      const trimmed = body.agent_name.trim();
+      if (trimmed.length === 0) {
+        update.agent_name = null;
+      } else if (trimmed.length > 20) {
+        return NextResponse.json(
+          { error: "agent_name_too_long" },
+          { status: 400 }
+        );
+      } else {
+        update.agent_name = trimmed;
+      }
+    } else {
+      return NextResponse.json(
+        { error: "invalid_agent_name" },
+        { status: 400 }
+      );
+    }
   }
 
   if (body.emergency_contact_phone !== undefined) {
@@ -116,14 +140,12 @@ export async function PATCH(
   const { error } = await supabase.from("seniors").update(update).eq("id", id);
   if (error) {
     console.error("seniors update failed:", error);
-    // If the emergency_* columns aren't migrated yet, retry without them.
-    if (
-      "emergency_on_no_answer" in update ||
-      "emergency_contact_phone" in update
-    ) {
+    // If newer columns (emergency_*, agent_name) aren't migrated yet, retry
+    // without them so the rest of the update still lands.
+    const newish = ["emergency_on_no_answer", "emergency_contact_phone", "agent_name"];
+    if (newish.some((k) => k in update)) {
       const fallback = { ...update };
-      delete fallback.emergency_on_no_answer;
-      delete fallback.emergency_contact_phone;
+      for (const k of newish) delete fallback[k];
       if (Object.keys(fallback).length > 0) {
         const { error: fbErr } = await supabase
           .from("seniors")
@@ -131,7 +153,7 @@ export async function PATCH(
           .eq("id", id);
         if (!fbErr) {
           return NextResponse.json(
-            { ok: true, warning: "emergency_columns_missing" },
+            { ok: true, warning: "newer_columns_missing" },
             { status: 200 }
           );
         }

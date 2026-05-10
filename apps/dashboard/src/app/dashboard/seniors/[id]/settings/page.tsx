@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SeniorTabs } from "../_components/senior-tabs";
 import { ScheduleEditor } from "../_components/schedule-editor";
 import { EmergencySettings } from "../_components/emergency-settings";
+import { AgentNameEditor } from "../_components/agent-name-editor";
 
 interface ScheduleEntry {
   weekday: string;
@@ -26,7 +27,7 @@ export default async function SeniorSettingsPage({
   const { data: senior } = await supabase
     .from("seniors")
     .select(
-      "id, name, phone, schedule, family_id, is_self, emergency_contact_phone, emergency_on_no_answer"
+      "id, name, phone, schedule, family_id, is_self, emergency_contact_phone, emergency_on_no_answer, agent_name"
     )
     .eq("id", id)
     .maybeSingle();
@@ -64,6 +65,11 @@ export default async function SeniorSettingsPage({
         <ScheduleEditor
           seniorId={senior.id}
           initialSchedule={(senior.schedule ?? []) as ScheduleEntry[]}
+        />
+
+        <AgentNameEditor
+          seniorId={senior.id}
+          initialAgentName={senior.agent_name ?? null}
         />
 
         <EmergencySettings

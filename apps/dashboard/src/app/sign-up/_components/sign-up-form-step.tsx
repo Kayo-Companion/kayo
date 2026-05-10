@@ -45,6 +45,7 @@ type SubStep =
   | "phone"
   | "verify"
   | "schedule"
+  | "agent-name"
   | "context"
   | "buyer-phone"
   | "buyer-verify";
@@ -70,8 +71,8 @@ export function SignUpFormStep({
   // Family path: ask the buyer for their own phone at the end and verify it
   // there. The verify step is the last step and submits on success.
   const order: SubStep[] = isFamily
-    ? ["name", "phone", "schedule", "context", "buyer-phone", "buyer-verify"]
-    : ["name", "phone", "verify", "schedule"];
+    ? ["name", "phone", "schedule", "agent-name", "context", "buyer-phone", "buyer-verify"]
+    : ["name", "phone", "verify", "schedule", "agent-name"];
 
   const [subStep, setSubStep] = useState<SubStep>("name");
   const [recipientName, setRecipientName] = useState(
@@ -95,6 +96,7 @@ export function SignUpFormStep({
   const [buyerPhoneVerified, setBuyerPhoneVerified] = useState(
     initialData?.buyerPhoneVerified ?? false
   );
+  const [agentName, setAgentName] = useState(initialData?.agentName ?? "");
 
   // Self path: buyer phone always tracks recipient phone. Reset verification
   // if the user edits the recipient phone after verifying.
@@ -133,6 +135,7 @@ export function SignUpFormStep({
       introducerRelationship: isFamily ? introducerRelationship : undefined,
       buyerPhone: finalBuyerPhone,
       buyerPhoneVerified: verifiedOverride ?? buyerPhoneVerified,
+      agentName: agentName.trim() || undefined,
     });
   };
 
@@ -212,6 +215,15 @@ export function SignUpFormStep({
           schedule={schedule}
           onChange={setSchedule}
           onNext={() => proceedFrom("schedule")}
+        />
+      )}
+
+      {subStep === "agent-name" && (
+        <AgentNameStep
+          recipientName={recipientName}
+          value={agentName}
+          onChange={setAgentName}
+          onNext={() => proceedFrom("agent-name")}
           isLast={!isFamily}
         />
       )}
@@ -386,13 +398,11 @@ function ScheduleStep({
   schedule,
   onChange,
   onNext,
-  isLast,
 }: {
   name: string;
   schedule: ScheduleEntry[];
   onChange: (s: ScheduleEntry[]) => void;
   onNext: () => void;
-  isLast?: boolean;
 }) {
   const updateRow = (i: number, patch: Partial<ScheduleEntry>) => {
     onChange(schedule.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
@@ -467,6 +477,55 @@ function ScheduleStep({
         ご登録の電話番号からカヨ専用ダイヤルにおかけいただくと、好きな時にお話しいただけます。詳しい番号は登録後にお送りします。
       </div>
 
+      <NextButton onClick={onNext} />
+    </StepShell>
+  );
+}
+
+function AgentNameStep({
+  recipientName,
+  value,
+  onChange,
+  onNext,
+  isLast,
+}: {
+  recipientName: string;
+  value: string;
+  onChange: (v: string) => void;
+  onNext: () => void;
+  isLast?: boolean;
+}) {
+  const effective = value.trim() || "カヨ";
+  return (
+    <StepShell
+      heading="AIに名前をつけますか？"
+      sub={`通話で${recipientName || "あの方"}さんに呼ばれる、お話相手AIの名前です。デフォルトは「カヨ」です。`}
+    >
+      <Field label="AIの名前">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="カヨ"
+          maxLength={20}
+          className={`${inputClass} text-lg`}
+          autoComplete="off"
+          spellCheck={false}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onNext();
+            }
+          }}
+        />
+        <p className="mt-1.5 text-xs text-warm-gray">
+          未入力でもOK。「カヨ」になります。お好きな名前に変更できます。
+        </p>
+      </Field>
+      <div className="rounded-2xl border border-rose-300/40 bg-white/60 p-4 text-xs text-warm-brown/80">
+        通話の冒頭で「もしもし、お話相手の<span className="font-semibold text-warm-brown">{effective}</span>です」とご挨拶します。
+      </div>
       <NextButton onClick={onNext} label={isLast ? "確認画面へ" : "次へ"} />
     </StepShell>
   );

@@ -32,6 +32,8 @@ export interface SignUpData {
   // Set after Twilio Verify confirms ownership of buyerPhone. Gates the
   // confirmation step / Stripe checkout.
   buyerPhoneVerified: boolean;
+  // Optional custom AI-agent name. Empty = use the product default ("カヨ").
+  agentName?: string;
 }
 
 function isPlan(p: string | null): p is Plan {

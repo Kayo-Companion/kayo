@@ -20,6 +20,7 @@ interface SignUpPayload {
   introducerRelationship?: string;
   buyerPhone: string;
   buyerPhoneVerified: boolean;
+  agentName?: string;
 }
 
 function planPriceId(plan: Plan): string | undefined {
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
         introducer_name: data.introducerName ?? "",
         introducer_relationship: data.introducerRelationship ?? "",
         schedule: JSON.stringify(data.schedule),
+        agent_name: (data.agentName ?? "").trim(),
       },
     },
     return_url: `${origin}/sign-up/return?session_id={CHECKOUT_SESSION_ID}`,

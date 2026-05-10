@@ -55,6 +55,8 @@ class Senior(BaseModel):
     introducer_relationship: str | None = None
     health_notes: str | None = None  # free-text "話したいこと"
     is_active: bool = True
+    # Custom AI-agent name; None = fall back to the product default (カヨ).
+    agent_name: str | None = None
     # Emergency contact: SMS sent here when an outbound call ends with
     # no-answer / busy / failed AND emergency_on_no_answer is true.
     emergency_contact_phone: str | None = None

@@ -172,6 +172,7 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
           </>
         )}
         <Row label="お電話のスケジュール" value={formatSchedule(data.schedule)} />
+        <Row label="AIの名前" value={data.agentName?.trim() || "カヨ"} />
 
         {data.audience === "family" && (
           <Row

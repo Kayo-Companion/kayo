@@ -132,7 +132,8 @@ export async function POST(request: Request) {
         break;
       }
 
-      // 3. Insert senior row.
+      // 3. Insert senior row — guarded by phone match so a webhook re-run
+      //    or a parallel /sign-up/return self-heal doesn't create duplicates.
       let schedule: unknown[] = [];
       try {
         schedule = JSON.parse(md.schedule || "[]");
@@ -140,25 +141,38 @@ export async function POST(request: Request) {
         schedule = [];
       }
 
-      const { data: senior, error: seniorErr } = await supabase
+      const { data: existingSenior } = await supabase
         .from("seniors")
-        .insert({
-          family_id: family.id,
-          name: md.recipient_name,
-          phone: md.recipient_phone,
-          schedule,
-          is_self: md.audience === "self",
-          introducer_name: md.introducer_name || null,
-          introducer_relationship: md.introducer_relationship || null,
-          health_notes: null,
-          is_active: true,
-        })
-        .select()
-        .single();
-      if (seniorErr) {
-        console.error("seniors insert failed:", seniorErr);
-        break;
+        .select("id")
+        .eq("family_id", family.id)
+        .eq("phone", md.recipient_phone)
+        .maybeSingle();
+
+      let senior: { id: string } | null = existingSenior ?? null;
+      if (!existingSenior) {
+        const { data: created, error: seniorErr } = await supabase
+          .from("seniors")
+          .insert({
+            family_id: family.id,
+            name: md.recipient_name,
+            phone: md.recipient_phone,
+            schedule,
+            is_self: md.audience === "self",
+            introducer_name: md.introducer_name || null,
+            introducer_relationship: md.introducer_relationship || null,
+            health_notes: null,
+            is_active: true,
+            agent_name: md.agent_name?.trim() || null,
+          })
+          .select("id")
+          .single();
+        if (seniorErr) {
+          console.error("seniors insert failed:", seniorErr);
+          break;
+        }
+        senior = created;
       }
+      if (!senior) break;
 
       // 4. Stamp family_id + senior_id back onto the subscription metadata
       //    so renewal/cancellation webhooks can find them later.

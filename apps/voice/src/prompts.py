@@ -119,6 +119,16 @@ def _opening_template(model: str | None) -> str:
 # Public builders
 # ---------------------------------------------------------------------------
 
+# Default agent name when the senior hasn't customized it.
+DEFAULT_AGENT_NAME = "カヨ"
+
+
+def _agent_name(senior: Senior) -> str:
+    """Return the senior's custom agent name, or the product default."""
+    name = (senior.agent_name or "").strip()
+    return name or DEFAULT_AGENT_NAME
+
+
 def build_kayo_prompt(
     senior: Senior,
     past_summaries: list[str] | None = None,
@@ -146,6 +156,7 @@ def build_kayo_prompt(
     next_call = _next_call_phrase(senior.schedule, senior.call_timezone)
 
     return _system_template(model).format(
+        agent_name=_agent_name(senior),
         user_name=senior.name,
         personal_context_block=personal_block,
         past_conversations_summary=past_block,
@@ -163,21 +174,22 @@ _DISCLAIMER = (
 
 
 def build_opening_script(senior: Senior, past_summaries: list[str] | None) -> str:
-    """The actual greeting line Kayo says verbatim.
+    """The actual greeting line the agent says verbatim.
 
     Shared across models — this is business logic, not model tuning.
     First call gets the full disclaimer + introduction; subsequent calls
     get a shorter friendlier opener.
     """
     is_first_call = not (past_summaries or [])
+    agent = _agent_name(senior)
 
     if senior.is_self:
-        prefix = f"もしもし、お話相手のカヨです。{_DISCLAIMER}"
+        prefix = f"もしもし、お話相手の{agent}です。{_DISCLAIMER}"
     else:
         introducer = senior.introducer_name or "ご家族"
         relationship = senior.introducer_relationship or "ご家族"
         prefix = (
-            f"もしもし、お話相手のカヨです。"
+            f"もしもし、お話相手の{agent}です。"
             f"{relationship}の{introducer}さんからのご紹介でお電話しました。"
             f"{_DISCLAIMER}"
         )
@@ -189,7 +201,7 @@ def build_opening_script(senior: Senior, past_summaries: list[str] | None) -> st
             f"最近、何かハマっていることはありますか？"
         )
     return (
-        f"もしもし、お話相手のカヨです。"
+        f"もしもし、お話相手の{agent}です。"
         f"{senior.name}さん、こんにちは。今日は何について話しましょうか？"
     )
 

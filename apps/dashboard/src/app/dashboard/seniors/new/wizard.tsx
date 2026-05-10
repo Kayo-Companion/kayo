@@ -24,7 +24,7 @@ import type { Weekday, ScheduleEntry } from "@/app/sign-up/page";
  */
 
 type Step = "audience" | "form";
-type SubStep = "name" | "phone" | "schedule" | "context";
+type SubStep = "name" | "phone" | "schedule" | "agent-name" | "context";
 
 export function AddSeniorWizard({ buyerName }: { buyerName: string }) {
   const [step, setStep] = useState<Step>("audience");
@@ -73,8 +73,8 @@ function SeniorForm({
   const router = useRouter();
   const isFamily = audience === "family";
   const order: SubStep[] = isFamily
-    ? ["name", "phone", "schedule", "context"]
-    : ["name", "phone", "schedule"];
+    ? ["name", "phone", "schedule", "context", "agent-name"]
+    : ["name", "phone", "schedule", "agent-name"];
 
   const [subStep, setSubStep] = useState<SubStep>("name");
   const [name, setName] = useState("");
@@ -84,6 +84,7 @@ function SeniorForm({
   ]);
   const [introducerName, setIntroducerName] = useState(buyerName);
   const [introducerRelationship, setIntroducerRelationship] = useState("お子様");
+  const [agentName, setAgentName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +110,7 @@ function SeniorForm({
           schedule,
           introducerName: isFamily ? introducerName.trim() : undefined,
           introducerRelationship: isFamily ? introducerRelationship : undefined,
+          agentName: agentName.trim() || undefined,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -186,7 +188,15 @@ function SeniorForm({
           schedule={schedule}
           onChange={setSchedule}
           onNext={() => proceedFrom("schedule")}
-          isLast={isLast("schedule")}
+        />
+      )}
+
+      {subStep === "agent-name" && (
+        <AgentNameStep
+          recipientName={name}
+          value={agentName}
+          onChange={setAgentName}
+          onNext={() => proceedFrom("agent-name")}
           submitting={submitting}
         />
       )}
@@ -331,15 +341,11 @@ function ScheduleStep({
   schedule,
   onChange,
   onNext,
-  isLast,
-  submitting,
 }: {
   name: string;
   schedule: ScheduleEntry[];
   onChange: (s: ScheduleEntry[]) => void;
   onNext: () => void;
-  isLast: boolean;
-  submitting: boolean;
 }) {
   const updateRow = (i: number, patch: Partial<ScheduleEntry>) => {
     onChange(schedule.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
@@ -397,9 +403,58 @@ function ScheduleStep({
           <Plus className="h-4 w-4" /> 時間を追加
         </button>
       </div>
+      <NextButton onClick={onNext} label="次へ" />
+    </StepShell>
+  );
+}
+
+function AgentNameStep({
+  recipientName,
+  value,
+  onChange,
+  onNext,
+  submitting,
+}: {
+  recipientName: string;
+  value: string;
+  onChange: (v: string) => void;
+  onNext: () => void;
+  submitting: boolean;
+}) {
+  const effective = value.trim() || "カヨ";
+  return (
+    <StepShell
+      heading="AIに名前をつけますか？"
+      sub={`通話で${recipientName || "あの方"}さんに呼ばれる、お話相手AIの名前です。デフォルトは「カヨ」です。`}
+    >
+      <Field label="AIの名前">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="カヨ"
+          maxLength={20}
+          className={`${inputClass} text-lg`}
+          autoComplete="off"
+          spellCheck={false}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onNext();
+            }
+          }}
+        />
+        <p className="mt-1.5 text-xs text-warm-gray">
+          未入力でもOK。「カヨ」になります。あとから変更できます。
+        </p>
+      </Field>
+      <div className="rounded-2xl border border-rose-300/40 bg-white/60 p-4 text-xs text-warm-brown/80">
+        通話の冒頭で「もしもし、お話相手の<span className="font-semibold text-warm-brown">{effective}</span>です」とご挨拶します。
+      </div>
       <NextButton
         onClick={onNext}
-        label={isLast ? "登録する" : "次へ"}
+        label="登録する"
         loading={submitting}
         disabled={submitting}
       />
@@ -465,7 +520,7 @@ function ContextStep({
       <NextButton
         onClick={onSubmit}
         disabled={!canProceed || submitting}
-        label="登録する"
+        label="次へ"
         loading={submitting}
       />
     </StepShell>

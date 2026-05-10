@@ -81,6 +81,7 @@ class SupabaseDB:
             introducer_relationship=row.get("introducer_relationship"),
             health_notes=row.get("health_notes"),
             is_active=row.get("is_active", True),
+            agent_name=row.get("agent_name"),
             emergency_contact_phone=row.get("emergency_contact_phone"),
             emergency_on_no_answer=row.get("emergency_on_no_answer", False),
         )

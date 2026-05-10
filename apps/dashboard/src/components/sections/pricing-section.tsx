@@ -8,7 +8,6 @@ interface Tier {
   name: string;
   price: number;
   minutes: number;
-  perDay: string;
   highlight?: boolean;
   pitch: string;
   features: string[];
@@ -20,11 +19,9 @@ const TIERS: Tier[] = [
     name: "ライト",
     price: 3980,
     minutes: 100,
-    perDay: "1日 約3分",
     pitch: "まずは試してみたい方に",
     features: [
       "毎月100分まで通話",
-      "週2〜3回・1回5分が目安",
       "ご家族を複数人ご登録可能",
       "通話履歴と自動要約",
       "気になる発言の家族通知",
@@ -36,12 +33,10 @@ const TIERS: Tier[] = [
     name: "スタンダード",
     price: 9800,
     minutes: 400,
-    perDay: "1日 約13分",
     highlight: true,
     pitch: "毎日たっぷりお話したい方に",
     features: [
       "毎月400分まで通話",
-      "毎日13分のゆっくりとした会話に十分",
       "ご家族を複数人ご登録可能",
       "通話履歴と自動要約",
       "気になる発言の家族通知",
@@ -53,11 +48,9 @@ const TIERS: Tier[] = [
     name: "プレミアム",
     price: 19800,
     minutes: 1000,
-    perDay: "1日 約33分",
     pitch: "見守りメインでご利用の方に",
     features: [
       "毎月1,000分まで通話",
-      "1日2〜3回の通話も可能",
       "複数のご家族へ同時にお電話可能",
       "通話履歴と自動要約",
       "気になる発言の家族通知",
@@ -126,7 +119,7 @@ function PricingCard({ tier }: { tier: Tier }) {
         <span className="text-sm font-normal text-warm-gray"> / 月</span>
       </div>
       <div className="mb-6 text-sm text-warm-gray">
-        {tier.minutes}分 ／ {tier.perDay}
+        毎月 {tier.minutes.toLocaleString()}分
       </div>
 
       <div className="mb-6 h-px w-full bg-rose-200/60" />
