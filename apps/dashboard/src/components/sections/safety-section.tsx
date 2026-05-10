@@ -1,4 +1,4 @@
-import { Check, X, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Check, X, ShieldCheck } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 
 const willDo = [
@@ -85,21 +85,6 @@ export function SafetySection() {
           </GlassCard>
         </div>
 
-        {/* Quote-style call-out */}
-        <GlassCard className="mt-8 p-7">
-          <div className="flex items-start gap-4">
-            <AlertTriangle className="mt-1 h-6 w-6 shrink-0 text-warm-orange" />
-            <div>
-              <div className="mb-2 text-sm font-semibold text-warm-brown">
-                不審な質問への対応
-              </div>
-              <p className="text-base leading-relaxed text-warm-brown/85">
-                「申し訳ございません、その件はお話しできない決まりになっております。ご家族にご相談いただけますか」——
-                どんな質問にもこの一言で必ず止まります。
-              </p>
-            </div>
-          </div>
-        </GlassCard>
       </div>
     </section>
   );

@@ -27,12 +27,6 @@ export function SiteHeader() {
             科学的裏付け
           </a>
           <a
-            href="#how-it-works"
-            className="text-sm text-warm-brown/80 transition-colors hover:text-coral"
-          >
-            使い方
-          </a>
-          <a
             href="#safety"
             className="text-sm text-warm-brown/80 transition-colors hover:text-coral"
           >

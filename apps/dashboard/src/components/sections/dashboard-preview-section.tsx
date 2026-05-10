@@ -1,4 +1,4 @@
-import { Calendar, Bell, TrendingUp, MessageCircle } from "lucide-react";
+import { Calendar, Bell, MessageCircle } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 
 export function DashboardPreviewSection() {
@@ -23,7 +23,6 @@ export function DashboardPreviewSection() {
               {[
                 { icon: Calendar, text: "通話履歴のカレンダービュー" },
                 { icon: MessageCircle, text: "毎回の通話を200文字で要約" },
-                { icon: TrendingUp, text: "気分の推移グラフ（週次・月次）" },
                 { icon: Bell, text: "気になる発言は即座にSMS通知" },
               ].map((item, i) => (
                 <li key={i} className="flex items-center gap-3">
@@ -78,32 +77,6 @@ export function DashboardPreviewSection() {
                     >
                       #{tag}
                     </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Mood chart mock */}
-              <div className="mb-5">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-warm-gray">
-                    今週の気分
-                  </span>
-                  <span className="text-xs font-semibold text-emerald-600">
-                    良好 ↑
-                  </span>
-                </div>
-                <div className="flex h-20 items-end gap-1.5">
-                  {[60, 70, 55, 75, 80, 85, 90].map((h, i) => (
-                    <div
-                      key={i}
-                      className="flex-1 rounded-t-md bg-gradient-to-t from-coral/40 to-warm-orange/80"
-                      style={{ height: `${h}%` }}
-                    />
-                  ))}
-                </div>
-                <div className="mt-1 flex justify-between text-[10px] text-warm-gray">
-                  {["月", "火", "水", "木", "金", "土", "日"].map((d) => (
-                    <span key={d}>{d}</span>
                   ))}
                 </div>
               </div>

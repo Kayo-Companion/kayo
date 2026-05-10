@@ -5,7 +5,6 @@ const columns = [
   {
     title: "サービス",
     links: [
-      { label: "使い方", href: "#how-it-works" },
       { label: "料金", href: "#pricing" },
       { label: "よくある質問", href: "#faq" },
       { label: "お問い合わせ", href: "/contact" },
