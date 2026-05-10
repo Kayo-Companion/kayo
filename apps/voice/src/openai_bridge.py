@@ -35,29 +35,64 @@ logger = logging.getLogger(__name__)
 
 OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 
-# gpt-realtime-mini published rates (USD per 1M tokens), May 2026.
-# Switch back to -2 rates ($32/$64/$4/$16, cached $0.40) if you change
-# OPENAI_REALTIME_MODEL to gpt-realtime-2.
+# Per-model published rates (USD per 1M tokens), May 2026.
 # https://developers.openai.com/api/docs/pricing
-PRICE_PER_M_TOKENS = {
-    "audio_input":         10.00,
-    "audio_input_cached":   0.30,
-    "audio_output":        20.00,
-    "text_input":           0.60,
-    "text_input_cached":    0.30,
-    "text_output":          2.40,
+#
+# Add a row here when you ship a new model — compute_cost_usd() picks the
+# right one at runtime based on OPENAI_REALTIME_MODEL, so swapping the env
+# var is the only change needed end-to-end.
+PRICE_TABLE: dict[str, dict[str, float]] = {
+    "gpt-realtime-2": {
+        "audio_input":         32.00,
+        "audio_input_cached":   0.40,
+        "audio_output":        64.00,
+        "text_input":           4.00,
+        "text_input_cached":    0.40,
+        "text_output":         16.00,
+    },
+    "gpt-realtime-1.5": {
+        "audio_input":         32.00,
+        "audio_input_cached":   0.40,
+        "audio_output":        64.00,
+        "text_input":           4.00,
+        "text_input_cached":    0.40,
+        "text_output":         16.00,
+    },
+    "gpt-realtime-mini": {
+        "audio_input":         10.00,
+        "audio_input_cached":   0.30,
+        "audio_output":        20.00,
+        "text_input":           0.60,
+        "text_input_cached":    0.30,
+        "text_output":          2.40,
+    },
 }
+# Default to the most expensive model so unknown IDs over-estimate (safer
+# than under-estimating a real bill).
+DEFAULT_PRICES = PRICE_TABLE["gpt-realtime-2"]
 
 
-def compute_cost_usd(usage: dict[str, int]) -> float:
+def _prices_for(model: str | None) -> dict[str, float]:
+    """Pick the price row for a model name. Prefix-match so dated snapshot
+    IDs (e.g. "gpt-realtime-mini-2026-XX") still resolve correctly."""
+    if not model:
+        return DEFAULT_PRICES
+    for key, prices in PRICE_TABLE.items():
+        if model.startswith(key):
+            return prices
+    return DEFAULT_PRICES
+
+
+def compute_cost_usd(usage: dict[str, int], model: str | None = None) -> float:
     """Sum the per-token rates over the per-call usage breakdown."""
+    p = _prices_for(model)
     return round(
-        usage.get("input_audio", 0)        / 1_000_000 * PRICE_PER_M_TOKENS["audio_input"]
-      + usage.get("input_audio_cached", 0) / 1_000_000 * PRICE_PER_M_TOKENS["audio_input_cached"]
-      + usage.get("output_audio", 0)       / 1_000_000 * PRICE_PER_M_TOKENS["audio_output"]
-      + usage.get("input_text", 0)         / 1_000_000 * PRICE_PER_M_TOKENS["text_input"]
-      + usage.get("input_text_cached", 0)  / 1_000_000 * PRICE_PER_M_TOKENS["text_input_cached"]
-      + usage.get("output_text", 0)        / 1_000_000 * PRICE_PER_M_TOKENS["text_output"],
+        usage.get("input_audio", 0)        / 1_000_000 * p["audio_input"]
+      + usage.get("input_audio_cached", 0) / 1_000_000 * p["audio_input_cached"]
+      + usage.get("output_audio", 0)       / 1_000_000 * p["audio_output"]
+      + usage.get("input_text", 0)         / 1_000_000 * p["text_input"]
+      + usage.get("input_text_cached", 0)  / 1_000_000 * p["text_input_cached"]
+      + usage.get("output_text", 0)        / 1_000_000 * p["text_output"],
         6,
     )
 
@@ -275,7 +310,7 @@ class CallBridge:
 
     @property
     def cost_usd(self) -> float:
-        return compute_cost_usd(self.usage_totals)
+        return compute_cost_usd(self.usage_totals, get_settings().openai_realtime_model)
 
     async def _fire_response_after_pause(
         self, openai_ws: ClientConnection, delay_s: float
