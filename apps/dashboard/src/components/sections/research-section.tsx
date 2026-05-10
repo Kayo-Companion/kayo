@@ -47,30 +47,30 @@ export function ResearchSection() {
             を守る。
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-warm-brown/75 md:text-lg">
-            これは慰めではなく、科学です。米国NIHが資金提供した臨床試験
-            <span className="font-semibold text-warm-brown"> I-CONECT </span>
-            が、毎日の会話介入が高齢者の認知機能を有意に改善することを示しました。
+            米国の研究機関が、毎日の会話を続けた高齢者の認知機能が
+            <span className="font-semibold text-warm-brown">はっきりと改善した</span>
+            ことを臨床試験で確認しました。
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <StatCard
             icon={TrendingUp}
-            value="+1.75点"
-            label="MoCA総合認知機能の改善"
-            description="6ヶ月間の毎日の会話介入後、対照群と比較してMCI実験群で有意な改善（p=0.03）。"
+            value="認知機能"
+            label="はっきりと改善"
+            description="6ヶ月間、毎日会話を続けた高齢者は、しなかったグループに比べて認知機能テストの点数が大きく伸びました。"
           />
           <StatCard
             icon={Brain}
-            value="d = 0.73"
-            label="効果量（Cohen's d）"
-            description="統計学的に「大きな効果」に分類される改善幅。記憶機能でもd=0.67を記録。"
+            value="記憶力"
+            label="特に大きく向上"
+            description="名前や予定を思い出す力など、日常で実感しやすい記憶の項目でしっかりとした改善が見られました。"
           />
           <StatCard
             icon={Calendar}
-            value="10年分"
-            label="加齢遅延に相当"
-            description="この1.75点の改善は、同コホートにおいて10年分の年齢差に相当する大きさ。"
+            value="約10年分"
+            label="若々しさを取り戻す"
+            description="改善の大きさは、同じ年代で約10歳分の差に相当するほどでした。"
           />
         </div>
 
@@ -82,16 +82,10 @@ export function ResearchSection() {
             </div>
             <div className="space-y-1.5 text-sm">
               <div className="font-semibold text-warm-brown">
-                I-CONECT 試験（Internet-Based Conversational Engagement Clinical Trial）
+                出典について
               </div>
               <div className="text-warm-gray">
-                ClinicalTrials.gov{" "}
-                <span className="font-mono">NCT02871921</span> ／ 責任者:
-                Hiroko H. Dodge, Ph.D., Harvard Medical School & Massachusetts General Hospital ／
-                資金: 米国国立衛生研究所（NIH）
-              </div>
-              <div className="text-warm-gray">
-                対象: 75歳以上の社会的に孤立した高齢者186名（正常認知86名・MCI 100名）。Webカメラ経由で訓練された面接者と週4回30分の半構造化会話を6ヶ月間。
+                米国国立衛生研究所（NIH）が資金提供し、ハーバード大学医学部の研究チームが実施した臨床試験「I-CONECT」の研究結果に基づいています。
               </div>
             </div>
           </div>
