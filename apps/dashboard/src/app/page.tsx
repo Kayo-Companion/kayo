@@ -15,11 +15,11 @@ export default function HomePage() {
     <main className="min-h-screen bg-cream">
       <SiteHeader />
       <HeroSection />
-      <section id="for-whom">
-        <ForWhomSection />
-      </section>
       <section id="research">
         <ResearchSection />
+      </section>
+      <section id="for-whom">
+        <ForWhomSection />
       </section>
       <section id="how-it-works">
         <HowItWorksSection />

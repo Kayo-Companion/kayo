@@ -45,7 +45,7 @@ export function HeroSection() {
             <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/60 bg-white/70 px-4 py-1.5 backdrop-blur-md">
               <Heart className="h-3.5 w-3.5 fill-coral text-coral" />
               <span className="text-xs font-semibold tracking-wide text-warm-brown">
-                ご家族のためのAIコンパニオン
+                心と頭の元気をつくるAIコンパニオン
               </span>
               <Star className="h-3.5 w-3.5 fill-warm-orange text-warm-orange" />
             </div>
@@ -58,9 +58,8 @@ export function HeroSection() {
           >
             <span className="block">大切な人に、</span>
             <span className="block">
-              毎日の
               <span className="bg-gradient-to-br from-coral via-rose-400 to-warm-orange bg-clip-text text-transparent">
-                お話し相手
+                話す習慣
               </span>
               を。
             </span>
@@ -68,9 +67,9 @@ export function HeroSection() {
 
           {/* Description */}
           <p className="animate-fade-in delay-300 max-w-xl text-base leading-relaxed text-warm-brown/80 md:text-lg">
-            毎日決まった時間にカヨから電話します。
+            会話が減ると、頭も心も鈍りがち。
             <br />
-            アプリも、新しい機械も、いりません。電話に出るだけ。
+            話したいときに、いつでもカヨと。
           </p>
 
           {/* CTA */}

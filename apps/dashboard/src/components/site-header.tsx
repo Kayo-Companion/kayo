@@ -15,16 +15,16 @@ export function SiteHeader() {
 
         <nav className="hidden items-center gap-6 md:flex">
           <a
-            href="#how-it-works"
-            className="text-sm text-warm-brown/80 transition-colors hover:text-coral"
-          >
-            使い方
-          </a>
-          <a
             href="#research"
             className="text-sm text-warm-brown/80 transition-colors hover:text-coral"
           >
             科学的裏付け
+          </a>
+          <a
+            href="#how-it-works"
+            className="text-sm text-warm-brown/80 transition-colors hover:text-coral"
+          >
+            使い方
           </a>
           <a
             href="#safety"
@@ -41,7 +41,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-1.5">
-          <div className="relative">
+          <div className="relative hidden sm:block">
             <Link
               href="/sign-up"
               className="inline-flex items-center justify-center rounded-full bg-warm-brown px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-warm-brown/90 active:scale-[0.97]"
@@ -54,7 +54,7 @@ export function SiteHeader() {
           </div>
           <Link
             href="/sign-in"
-            className="hidden px-3 text-sm font-medium text-warm-brown/80 underline-offset-4 transition-colors hover:text-coral hover:underline sm:inline-block"
+            className="inline-flex items-center justify-center rounded-full bg-warm-brown px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-warm-brown/90 active:scale-[0.97] sm:bg-transparent sm:px-3 sm:py-0 sm:text-warm-brown/80 sm:font-medium sm:underline-offset-4 sm:hover:bg-transparent sm:hover:text-coral sm:hover:underline"
           >
             ログイン
           </Link>

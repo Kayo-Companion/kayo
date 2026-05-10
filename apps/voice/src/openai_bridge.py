@@ -28,7 +28,7 @@ from websockets.asyncio.client import ClientConnection
 
 from .config import get_settings
 from .models import Senior
-from .prompts import build_kayo_prompt
+from .prompts import build_kayo_prompt, build_opening_instructions, build_opening_script
 from .safety import detect_distress
 
 logger = logging.getLogger(__name__)
@@ -156,55 +156,13 @@ async def configure_session(
     Required for `gpt-realtime-2` and forward; also accepted by older models.
     """
     settings = get_settings()
-    instructions = build_kayo_prompt(senior, past_summaries)
-    is_first_call = not (past_summaries or [])
-
-    # Anti-scam disclaimer is mandatory at the start of every call.
-    disclaimer = (
-        "初めに言っておきますね、私はAIです。"
-        "私からクレジットカード番号や、銀行の口座、お金の話、"
-        "個人情報をお聞きすることは絶対にありません。安心してくださいね。"
-    )
-
-    # Identity + (family-only) introducer mention + disclaimer — same on
-    # every call. We do NOT repeat the introducer's name for emphasis.
-    if senior.is_self:
-        prefix = f"もしもし、お話相手のカヨです。{disclaimer}"
-    else:
-        introducer = senior.introducer_name or "ご家族"
-        relationship = senior.introducer_relationship or "ご家族"
-        prefix = (
-            f"もしもし、お話相手のカヨです。"
-            f"{relationship}の{introducer}さんからのご紹介でお電話しました。"
-            f"{disclaimer}"
-        )
-
-    # Build the opening as ONE complete script the model reads end-to-end.
-    # We deliberately do NOT name-drop the user's interests in the opening
-    # (it was creepy, like "I read your file"). The about_me text stays in
-    # the system prompt so Kayo can reference it organically during the call.
-    if is_first_call:
-        full_script = (
-            f"{prefix}"
-            f"{senior.name}さん、初めまして。"
-            f"最近、何かハマっていることはありますか？"
-        )
-    else:
-        full_script = (
-            f"もしもし、お話相手のカヨです。"
-            f"{senior.name}さん、こんにちは。今日は何について話しましょうか？"
-        )
-
-    opening_instructions = (
-        "電話の最初の挨拶。下の本文をそのまま声に出すこと。"
-        "付け足しも省略も一切しない。\n"
-        "「はい、承知しました」「今から読み上げますね」など前置きは絶対に言わない。"
-        "いきなり本文の最初の文字から話し始め、本文の最後まで言ったら黙る。\n\n"
-        "声の出し方：60代後半の優しいおばちゃんのように、温かく、感情を込めて、"
-        "ゆっくり話してください。カスタマーサービスや受付のような硬い読み上げは絶対にダメ。"
-        "親しみのある柔らかいトーンで、近所のお友達に話しかけるように。\n\n"
-        f"本文：\n{full_script}"
-    )
+    model = settings.openai_realtime_model
+    # System prompt + opening meta-instructions are model-specific (live in
+    # prompts_mini.py / prompts_realtime2.py). The audible opening script
+    # itself is shared business logic.
+    instructions = build_kayo_prompt(senior, past_summaries, model=model)
+    full_script = build_opening_script(senior, past_summaries)
+    opening_instructions = build_opening_instructions(full_script, model=model)
 
     session_update = {
         "type": "session.update",
