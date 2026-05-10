@@ -35,6 +35,60 @@ logger = logging.getLogger(__name__)
 
 OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 
+# gpt-realtime-2 published rates (USD per 1M tokens), May 2026.
+# https://developers.openai.com/api/docs/pricing
+PRICE_PER_M_TOKENS = {
+    "audio_input":         32.00,
+    "audio_input_cached":   0.40,
+    "audio_output":        64.00,
+    "text_input":           4.00,
+    "text_input_cached":    0.40,
+    "text_output":         16.00,
+}
+
+
+def compute_cost_usd(usage: dict[str, int]) -> float:
+    """Sum the per-token rates over the per-call usage breakdown."""
+    return round(
+        usage.get("input_audio", 0)        / 1_000_000 * PRICE_PER_M_TOKENS["audio_input"]
+      + usage.get("input_audio_cached", 0) / 1_000_000 * PRICE_PER_M_TOKENS["audio_input_cached"]
+      + usage.get("output_audio", 0)       / 1_000_000 * PRICE_PER_M_TOKENS["audio_output"]
+      + usage.get("input_text", 0)         / 1_000_000 * PRICE_PER_M_TOKENS["text_input"]
+      + usage.get("input_text_cached", 0)  / 1_000_000 * PRICE_PER_M_TOKENS["text_input_cached"]
+      + usage.get("output_text", 0)        / 1_000_000 * PRICE_PER_M_TOKENS["text_output"],
+        6,
+    )
+
+
+def extract_usage(response_obj: dict[str, Any]) -> dict[str, int]:
+    """Pull the per-response usage breakdown out of a `response.done` event.
+
+    OpenAI Realtime returns:
+      response.usage = {
+        input_token_details:  {audio_tokens, text_tokens, cached_tokens,
+                               cached_tokens_details: {audio_tokens, text_tokens}},
+        output_token_details: {audio_tokens, text_tokens},
+      }
+    """
+    u = response_obj.get("usage", {}) or {}
+    inp = u.get("input_token_details", {}) or {}
+    out = u.get("output_token_details", {}) or {}
+    cached = inp.get("cached_tokens_details", {}) or {}
+
+    cached_audio = int(cached.get("audio_tokens") or 0)
+    cached_text  = int(cached.get("text_tokens") or 0)
+    audio_total  = int(inp.get("audio_tokens") or 0)
+    text_total   = int(inp.get("text_tokens")  or 0)
+
+    return {
+        "input_audio":        max(0, audio_total - cached_audio),
+        "input_audio_cached": cached_audio,
+        "input_text":         max(0, text_total - cached_text),
+        "input_text_cached":  cached_text,
+        "output_audio": int(out.get("audio_tokens") or 0),
+        "output_text":  int(out.get("text_tokens")  or 0),
+    }
+
 
 @asynccontextmanager
 async def open_realtime(model: str) -> AsyncIterator[ClientConnection]:
@@ -122,10 +176,10 @@ async def configure_session(
         "session": {
             "type": "realtime",
             "instructions": instructions,
-            # Tight cap for ongoing turns so Kayo doesn't ramble. The opening
-            # greeting (much longer) overrides this with its own cap on the
-            # response.create below.
-            "max_output_tokens": 200,
+            # Cap for ongoing turns so Kayo doesn't ramble — ~20s of speech,
+            # roughly 1-2 sentences. Lower (e.g. 200) caused mid-sentence
+            # truncation. Greeting has its own larger override below.
+            "max_output_tokens": 400,
             "audio": {
                 "input": {
                     # Twilio Media Streams sends G.711 μ-law @ 8kHz.
@@ -203,6 +257,19 @@ class CallBridge:
         # that event we flip interrupt_response back to True so the rest of
         # the call has normal barge-in behavior.
         self._greeting_done = False
+        # Token usage rolled up across all `response.done` events on this call.
+        self.usage_totals: dict[str, int] = {
+            "input_audio": 0,
+            "input_audio_cached": 0,
+            "input_text": 0,
+            "input_text_cached": 0,
+            "output_audio": 0,
+            "output_text": 0,
+        }
+
+    @property
+    def cost_usd(self) -> float:
+        return compute_cost_usd(self.usage_totals)
 
 
     async def run(self) -> list[dict[str, Any]]:
@@ -385,6 +452,21 @@ class CallBridge:
                 elif etype == "response.output_audio.done":
                     logger.info("OpenAI response.output_audio.done (chunks sent: %d)",
                                 audio_chunks_sent)
+                elif etype == "response.done":
+                    # Aggregate token usage. response.usage breakdown is the
+                    # billing-grade source of truth.
+                    delta = extract_usage(msg.get("response", {}) or {})
+                    for k, v in delta.items():
+                        self.usage_totals[k] = self.usage_totals.get(k, 0) + v
+                    logger.info(
+                        "response.done usage: in_audio=%d (cached %d) "
+                        "in_text=%d (cached %d) out_audio=%d out_text=%d "
+                        "-> running total $%.4f",
+                        delta["input_audio"], delta["input_audio_cached"],
+                        delta["input_text"],  delta["input_text_cached"],
+                        delta["output_audio"], delta["output_text"],
+                        self.cost_usd,
+                    )
         except websockets.ConnectionClosed:
             logger.info("OpenAI WS closed")
         except Exception:

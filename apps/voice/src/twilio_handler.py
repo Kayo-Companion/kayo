@@ -105,12 +105,37 @@ async def twilio_stream(websocket: WebSocket, senior_id: str) -> None:
     ended_at = datetime.now(UTC)
     used_minutes = minutes_for_call(call.started_at, ended_at)
 
-    # Persist transcript + generate summary asynchronously after disconnect.
+    # Persist transcript + token usage / cost. The bridge accumulated usage
+    # from every `response.done` event during the call.
     await db.finalize_call(
         call_id=call.id,
         transcript=transcript,
         distress_detected=bridge.distress_detected,
         distress_reason=bridge.distress_reason,
+        openai_usage=bridge.usage_totals,
+        openai_cost_usd=bridge.cost_usd,
+    )
+
+    # Per-call cost summary — surfaces in /tmp/kayo-voice.log so you can spot
+    # outlier-expensive calls without querying Supabase.
+    u = bridge.usage_totals
+    duration_s = (ended_at - call.started_at).total_seconds()
+    cost = bridge.cost_usd
+    cost_per_min = (cost / duration_s * 60.0) if duration_s > 0 else 0.0
+    cached_in_total = u["input_audio_cached"] + u["input_text_cached"]
+    fresh_in_total  = u["input_audio"]        + u["input_text"]
+    cache_ratio = (cached_in_total / (cached_in_total + fresh_in_total) * 100
+                   if (cached_in_total + fresh_in_total) else 0.0)
+    logger.info(
+        "CALL COST senior=%s call=%s duration=%.1fs "
+        "in_audio=%d (cached %d) in_text=%d (cached %d) "
+        "out_audio=%d out_text=%d "
+        "cache_hit=%.1f%% cost=$%.4f ($%.4f/min)",
+        senior.id, call.id, duration_s,
+        u["input_audio"], u["input_audio_cached"],
+        u["input_text"],  u["input_text_cached"],
+        u["output_audio"], u["output_text"],
+        cache_ratio, cost, cost_per_min,
     )
 
     # Bill the family for the minutes used (rounded up).

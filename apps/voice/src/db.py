@@ -33,6 +33,8 @@ class DB(Protocol):
         transcript: list[dict[str, Any]],
         distress_detected: bool,
         distress_reason: str | None,
+        openai_usage: dict[str, int] | None = None,
+        openai_cost_usd: float | None = None,
     ) -> None: ...
     async def update_call_summary(self, call_id: str, summary: CallSummary) -> None: ...
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]: ...
@@ -125,17 +127,32 @@ class SupabaseDB:
         transcript: list[dict[str, Any]],
         distress_detected: bool,
         distress_reason: str | None,
+        openai_usage: dict[str, int] | None = None,
+        openai_cost_usd: float | None = None,
     ) -> None:
         ended_at = datetime.now(UTC)
-        await self._client.table("calls").update(
-            {
-                "ended_at": ended_at.isoformat(),
-                "transcript": transcript,
-                "status": CallStatus.COMPLETED.value,
-                "distress_detected": distress_detected,
-                "distress_reason": distress_reason,
-            }
-        ).eq("id", call_id).execute()
+        update: dict[str, Any] = {
+            "ended_at": ended_at.isoformat(),
+            "transcript": transcript,
+            "status": CallStatus.COMPLETED.value,
+            "distress_detected": distress_detected,
+            "distress_reason": distress_reason,
+        }
+        if openai_usage is not None:
+            update["openai_usage"] = openai_usage
+        if openai_cost_usd is not None:
+            update["openai_cost_usd"] = openai_cost_usd
+        try:
+            await self._client.table("calls").update(update).eq("id", call_id).execute()
+        except Exception as exc:
+            # If the openai_* columns aren't migrated yet, retry without them
+            # so the call still finalizes.
+            if "openai_usage" in str(exc) or "openai_cost_usd" in str(exc):
+                update.pop("openai_usage", None)
+                update.pop("openai_cost_usd", None)
+                await self._client.table("calls").update(update).eq("id", call_id).execute()
+            else:
+                raise
 
     async def update_call_summary(self, call_id: str, summary: CallSummary) -> None:
         await self._client.table("calls").update(
@@ -256,6 +273,8 @@ class InMemoryDB:
         transcript: list[dict[str, Any]],
         distress_detected: bool,
         distress_reason: str | None,
+        openai_usage: dict[str, int] | None = None,
+        openai_cost_usd: float | None = None,
     ) -> None:
         call = self._calls.get(call_id)
         if not call:
