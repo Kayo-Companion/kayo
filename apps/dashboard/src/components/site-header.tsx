@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function SiteHeader() {
@@ -5,9 +6,14 @@ export function SiteHeader() {
     <header className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4 md:top-6">
       <div className="pointer-events-auto flex h-14 w-full max-w-3xl items-center justify-between gap-4 rounded-full border border-rose-200/60 bg-white/85 pl-4 pr-2 shadow-[0_8px_30px_-10px_rgba(232,93,93,0.2)] backdrop-blur-xl md:pl-6">
         <Link href="/" className="flex shrink-0 items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-coral to-warm-orange shadow-sm shadow-coral/40">
-            <span className="font-serif text-sm font-bold text-white">カ</span>
-          </div>
+          <Image
+            src="/logo-mark.png"
+            alt="カヨ"
+            width={32}
+            height={32}
+            priority
+            className="h-8 w-8"
+          />
           <span className="font-serif text-lg font-medium tracking-tight text-warm-brown">
             カヨ
           </span>

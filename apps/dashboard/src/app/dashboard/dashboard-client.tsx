@@ -55,12 +55,21 @@ export function DashboardClient({ family, seniors }: Props) {
           <h1 className="font-serif text-3xl font-medium tracking-tight text-warm-brown">
             ダッシュボード
           </h1>
-          <a
-            href="/"
-            className="text-sm text-warm-gray hover:text-coral"
-          >
-            トップへ戻る
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="/"
+              className="text-sm text-warm-gray hover:text-coral"
+            >
+              トップへ戻る
+            </a>
+            <Link
+              href="/dashboard/settings"
+              aria-label="設定"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-warm-gray transition-colors hover:bg-rose-100 hover:text-coral"
+            >
+              <Settings className="h-5 w-5" />
+            </Link>
+          </div>
         </header>
 
         <KayoNumberCard />

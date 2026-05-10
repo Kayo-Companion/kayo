@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const columns = [
@@ -43,11 +44,13 @@ export function SiteFooter() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-5">
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-coral to-warm-orange shadow-sm shadow-coral/40">
-                <span className="font-serif text-base font-bold text-white">
-                  カ
-                </span>
-              </div>
+              <Image
+                src="/logo-mark.png"
+                alt="カヨ"
+                width={36}
+                height={36}
+                className="h-9 w-9"
+              />
               <span className="font-serif text-xl font-medium tracking-tight text-warm-brown">
                 カヨ
               </span>

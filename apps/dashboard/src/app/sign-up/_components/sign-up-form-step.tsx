@@ -15,9 +15,17 @@ import type { Plan, ScheduleEntry, SignUpData, Weekday } from "../page";
  */
 function useNoAutofill() {
   const ref = useRef<HTMLInputElement>(null);
-  const [readOnly, setReadOnly] = useState(true);
-  // Backup: lift readonly automatically after 250ms in case browsers focus
-  // the field via autoFocus and we'd otherwise be stuck.
+  // Skip the readonly trick on touch devices — there, focusing a readonly
+  // input suppresses the on-screen keyboard, and when readonly lifts the
+  // input is already focused so no new focus event fires to summon it.
+  // The Chrome autofill heuristic this guards against is a desktop problem.
+  const [readOnly, setReadOnly] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const isTouch =
+      window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ??
+      false;
+    return !isTouch;
+  });
   useEffect(() => {
     const t = setTimeout(() => setReadOnly(false), 250);
     return () => clearTimeout(t);
