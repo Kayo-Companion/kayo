@@ -35,15 +35,17 @@ logger = logging.getLogger(__name__)
 
 OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 
-# gpt-realtime-2 published rates (USD per 1M tokens), May 2026.
+# gpt-realtime-mini published rates (USD per 1M tokens), May 2026.
+# Switch back to -2 rates ($32/$64/$4/$16, cached $0.40) if you change
+# OPENAI_REALTIME_MODEL to gpt-realtime-2.
 # https://developers.openai.com/api/docs/pricing
 PRICE_PER_M_TOKENS = {
-    "audio_input":         32.00,
-    "audio_input_cached":   0.40,
-    "audio_output":        64.00,
-    "text_input":           4.00,
-    "text_input_cached":    0.40,
-    "text_output":         16.00,
+    "audio_input":         10.00,
+    "audio_input_cached":   0.30,
+    "audio_output":        20.00,
+    "text_input":           0.60,
+    "text_input_cached":    0.30,
+    "text_output":          2.40,
 }
 
 
@@ -58,6 +60,37 @@ def compute_cost_usd(usage: dict[str, int]) -> float:
       + usage.get("output_text", 0)        / 1_000_000 * PRICE_PER_M_TOKENS["text_output"],
         6,
     )
+
+
+# Japanese 相槌 (back-channel) acknowledgments. When the user says one of
+# these mid- or post-Kayo-turn we should NOT treat it as a request for a new
+# response — Kayo should just keep going (or stay silent if she's already
+# done). semantic_vad with eagerness=low is also supposed to filter these
+# out at the server, but it's unreliable on phone audio, so we belt-and-
+# suspenders it here.
+BACKCHANNEL_PATTERNS = {
+    "うん", "うんうん", "うーん", "んー", "んん",
+    "はい", "はいはい",
+    "ええ",
+    "そう", "そうそう", "そっか", "そうですね", "そうね", "そうだね",
+    "へぇ", "へえ", "へー",
+    "あぁ", "ああ", "あー",
+    "あら", "あらー",
+    "なるほど",
+    "ふむ", "ふん",
+    "おー", "おお",
+    "まあ", "まぁ",
+    "ふーん",
+}
+
+
+def is_backchannel(text: str) -> bool:
+    """True if `text` is a no-content acknowledgment we should not respond to."""
+    if not text:
+        return True
+    # Strip whitespace + common punctuation/quote endings
+    t = text.strip().rstrip("。、！？!?.…」』 　").strip()
+    return (not t) or (t in BACKCHANNEL_PATTERNS)
 
 
 def extract_usage(response_obj: dict[str, Any]) -> dict[str, int]:
@@ -163,12 +196,14 @@ async def configure_session(
         )
 
     opening_instructions = (
-        "これは電話の最初の挨拶です。**最後まで一気に話し切ってください**。"
-        "途中で止まったり省略したりしないこと。\n\n"
+        "電話の最初の挨拶。下の本文をそのまま声に出すこと。"
+        "付け足しも省略も一切しない。\n"
+        "「はい、承知しました」「今から読み上げますね」など前置きは絶対に言わない。"
+        "いきなり本文の最初の文字から話し始め、本文の最後まで言ったら黙る。\n\n"
         "声の出し方：60代後半の優しいおばちゃんのように、温かく、感情を込めて、"
         "ゆっくり話してください。カスタマーサービスや受付のような硬い読み上げは絶対にダメ。"
         "親しみのある柔らかいトーンで、近所のお友達に話しかけるように。\n\n"
-        f"話す内容（途中で切らずに最後まで）：\n{full_script}"
+        f"本文：\n{full_script}"
     )
 
     session_update = {
@@ -257,6 +292,14 @@ class CallBridge:
         # that event we flip interrupt_response back to True so the rest of
         # the call has normal barge-in behavior.
         self._greeting_done = False
+        # Tracks whether a response is currently being generated server-side.
+        # Used to avoid firing duplicate `response.create` calls that race
+        # semantic_vad's auto-create (when it does fire).
+        self._response_in_progress = False
+        # Pending response.create after the patience pause. We cancel it if a
+        # new transcription arrives during the pause (user was still mid-
+        # thought) — only the *latest* user turn should trigger a response.
+        self._pending_response_task: asyncio.Task[None] | None = None
         # Token usage rolled up across all `response.done` events on this call.
         self.usage_totals: dict[str, int] = {
             "input_audio": 0,
@@ -270,6 +313,30 @@ class CallBridge:
     @property
     def cost_usd(self) -> float:
         return compute_cost_usd(self.usage_totals)
+
+    async def _fire_response_after_pause(
+        self, openai_ws: ClientConnection, delay_s: float
+    ) -> None:
+        """Wait `delay_s`, then fire response.create — unless cancelled.
+
+        The pause gives the user a moment to keep talking after a brief
+        thinking pause; if a new transcription arrives, the parent cancels
+        this task and schedules a fresh one with the newer transcript in
+        context.
+        """
+        try:
+            await asyncio.sleep(delay_s)
+        except asyncio.CancelledError:
+            return
+        # Re-check state — the user may have started a new response in the
+        # meantime, or interrupted, etc.
+        if self._response_in_progress:
+            logger.debug("Skip response.create after pause: already in progress")
+            return
+        try:
+            await openai_ws.send(json.dumps({"type": "response.create"}))
+        except Exception:
+            logger.exception("Failed to send response.create after pause")
 
 
     async def run(self) -> list[dict[str, Any]]:
@@ -384,8 +451,13 @@ class CallBridge:
                                                 "turn_detection": {
                                                     "type": "semantic_vad",
                                                     "eagerness": "low",
+                                                    # User can interrupt Kayo by speaking.
                                                     "interrupt_response": True,
-                                                    "create_response": True,
+                                                    # IMPORTANT: bridge owns response.create.
+                                                    # Letting semantic_vad auto-fire while we
+                                                    # also fired created racing duplicates and
+                                                    # phantom responses on partial commits.
+                                                    "create_response": False,
                                                 },
                                             },
                                             "output": {
@@ -412,19 +484,28 @@ class CallBridge:
                             logger.warning(
                                 "Distress detected on call: %s — %s", self.stream_sid, reason
                             )
-                    # Belt-and-suspenders: explicitly request a response after
-                    # every user-utterance transcription. semantic_vad with
-                    # eagerness=low sometimes never declares end-of-turn on
-                    # inbound calls (the user starts mid-thought, shorter
-                    # utterances, etc.), so create_response: true on the
-                    # session has nothing to trigger on. If semantic_vad has
-                    # already fired one, the API rejects this with
-                    # "response_already_active" and we swallow the error.
-                    if self._greeting_done:
-                        try:
-                            await openai_ws.send(json.dumps({"type": "response.create"}))
-                        except Exception:
-                            logger.exception("Failed to send fallback response.create")
+                    # Bridge owns response timing (create_response: false on
+                    # the session post-greeting). Fire response.create after a
+                    # short patience pause — and only if all of these hold:
+                    #   - greeting is finished (otherwise we'd race the opening)
+                    #   - no response is already mid-flight
+                    #   - the user actually said something substantive
+                    #     (not a back-channel like "うん" / "そう")
+                    # If a NEW transcription arrives during the pause, cancel
+                    # the pending fire — the user was still mid-thought.
+                    if self._pending_response_task and not self._pending_response_task.done():
+                        self._pending_response_task.cancel()
+                        self._pending_response_task = None
+                    if not self._greeting_done:
+                        pass
+                    elif self._response_in_progress:
+                        logger.debug("Skip response.create: one already in progress")
+                    elif is_backchannel(text):
+                        logger.info("Skip response.create: backchannel %r", text)
+                    else:
+                        self._pending_response_task = asyncio.create_task(
+                            self._fire_response_after_pause(openai_ws, 0.7)
+                        )
 
                 # Note: we deliberately do NOT send response.cancel on
                 # speech_started. semantic_vad handles barge-in natively,
@@ -452,7 +533,12 @@ class CallBridge:
                 elif etype == "response.output_audio.done":
                     logger.info("OpenAI response.output_audio.done (chunks sent: %d)",
                                 audio_chunks_sent)
+                elif etype == "response.created":
+                    # Marks server-side that a response is being generated.
+                    # Together with response.done it gates our smart fallback.
+                    self._response_in_progress = True
                 elif etype == "response.done":
+                    self._response_in_progress = False
                     # Aggregate token usage. response.usage breakdown is the
                     # billing-grade source of truth.
                     delta = extract_usage(msg.get("response", {}) or {})
