@@ -414,7 +414,12 @@ class CallBridge:
                                                 },
                                                 "turn_detection": {
                                                     "type": "semantic_vad",
-                                                    "eagerness": "low",
+                                                    # `medium` commits after ~0.5-1s of silence
+                                                    # (vs. ~1.5-2s for `low`). On phone audio
+                                                    # this saves ~1s per turn — meaningful for
+                                                    # conversational feel — without becoming
+                                                    # aggressive enough to chop user speech.
+                                                    "eagerness": "medium",
                                                     # User can interrupt Kayo by speaking.
                                                     "interrupt_response": True,
                                                     # IMPORTANT: bridge owns response.create.
@@ -482,7 +487,7 @@ class CallBridge:
                         logger.info("Skip response.create: backchannel %r", text)
                     else:
                         self._pending_response_task = asyncio.create_task(
-                            self._fire_response_after_pause(openai_ws, 0.7)
+                            self._fire_response_after_pause(openai_ws, 0.4)
                         )
 
                 # Note: we deliberately do NOT send response.cancel on

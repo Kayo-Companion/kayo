@@ -3,7 +3,7 @@
 import { ArrowRight, ArrowLeft, Loader2, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { createClient } from "@/lib/supabase/client";
@@ -16,6 +16,9 @@ type Stage =
   | { kind: "sending" }
   | { kind: "error"; phone?: string; message: string };
 
+// Where we stash the most recently used phone for one-tap re-login.
+const PHONE_LS_KEY = "kayo:last-phone";
+
 export default function SignInPage() {
   const supabase = createClient();
   const router = useRouter();
@@ -23,6 +26,19 @@ export default function SignInPage() {
   const [stage, setStage] = useState<Stage>({ kind: "phone" });
   const [phoneInput, setPhoneInput] = useState("");
   const [code, setCode] = useState("");
+
+  // Pre-fill the phone field from localStorage so returning users don't have
+  // to retype it on every login. We only store the E.164 form (no PII beyond
+  // what they already typed once on this device).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(PHONE_LS_KEY);
+      if (saved) setPhoneInput(saved);
+    } catch {
+      // Privacy mode / disabled storage — silently skip.
+    }
+  }, []);
 
   const normalized = normalizePhoneE164(phoneInput);
   const isValidPhone = normalized !== null;
@@ -76,6 +92,12 @@ export default function SignInPage() {
           : `ログインに失敗しました：${error.message ?? "不明なエラー"}`;
       setStage({ kind: "error", phone: stage.phone, message });
       return;
+    }
+    // Remember the phone for next time — pre-fills on next visit.
+    try {
+      window.localStorage.setItem(PHONE_LS_KEY, stage.phone);
+    } catch {
+      // ignore storage errors
     }
     router.push("/dashboard");
   };
