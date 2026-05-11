@@ -147,7 +147,12 @@ async def twilio_stream(websocket: WebSocket, senior_id: str) -> None:
 
     if transcript:
         try:
-            summary = await summarize_and_persist(call_id=call.id, transcript=transcript)
+            summary = await summarize_and_persist(
+                call_id=call.id,
+                senior_id=senior.id,
+                transcript=transcript,
+                agent_name=senior.agent_name or "カヨ",
+            )
             if summary.distress_detected or bridge.distress_detected:
                 await notify_distress(senior=senior, call_id=call.id, summary=summary.summary)
         except Exception:

@@ -57,6 +57,10 @@ class Senior(BaseModel):
     is_active: bool = True
     # Custom AI-agent name; None = fall back to the product default (カヨ).
     agent_name: str | None = None
+    # Long-term facts the agent should remember across calls (likes baseball,
+    # wife is カヨコ, etc.). Appended after each call by the summarizer with
+    # dedup. Distinct from recent-call summaries which are short-term.
+    long_term_facts: list[str] = Field(default_factory=list)
     # Emergency contact: SMS sent here when an outbound call ends with
     # no-answer / busy / failed AND emergency_on_no_answer is true.
     emergency_contact_phone: str | None = None

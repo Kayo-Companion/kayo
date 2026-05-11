@@ -134,7 +134,16 @@ def build_kayo_prompt(
     past_summaries: list[str] | None = None,
     model: str | None = None,
 ) -> str:
-    """Compose the personalized system prompt for a given senior + model."""
+    """Compose the personalized system prompt for a given senior + model.
+
+    Memory is split into two blocks:
+    - long_term_facts_block: durable facts about the user (from
+      senior.long_term_facts). Loaded into every call. Worth recalling
+      spontaneously if relevant.
+    - recent_calls_block: last 2 call summaries — short-term context only.
+      The agent should NOT proactively bring these topics up; only refer
+      to them if the user does.
+    """
     schedule_line = f"通話スケジュール：{_format_schedule(senior.schedule)}\n"
     personal_block = schedule_line
     if not senior.is_self and senior.introducer_name:
@@ -148,10 +157,23 @@ def build_kayo_prompt(
     if senior.health_notes:
         personal_block += f"\n本人について（自由記述）：\n{senior.health_notes}\n"
 
-    if past_summaries:
-        past_block = "\n".join(f"- {s}" for s in past_summaries[-5:])
+    # Durable facts about this senior — accumulated across calls. These
+    # should feel naturally available, like things a friend already knows.
+    if senior.long_term_facts:
+        long_term_facts_block = "\n".join(
+            f"- {f}" for f in senior.long_term_facts[-20:]
+        )
     else:
-        past_block = "（初回の通話です）"
+        long_term_facts_block = "（まだ覚えていることはありません）"
+
+    # Recent-call summaries are SHORT-TERM context only. Limit to the last 2
+    # so we don't bury the model in irrelevant topics from a week ago.
+    if past_summaries:
+        recent_calls_block = "\n".join(
+            f"- {s}" for s in past_summaries[-2:]
+        )
+    else:
+        recent_calls_block = "（初回の通話です）"
 
     next_call = _next_call_phrase(senior.schedule, senior.call_timezone)
 
@@ -159,7 +181,8 @@ def build_kayo_prompt(
         agent_name=_agent_name(senior),
         user_name=senior.name,
         personal_context_block=personal_block,
-        past_conversations_summary=past_block,
+        long_term_facts=long_term_facts_block,
+        past_conversations_summary=recent_calls_block,
         next_call_phrase=next_call,
     )
 

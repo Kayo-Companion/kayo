@@ -38,6 +38,9 @@ class DB(Protocol):
     ) -> None: ...
     async def update_call_summary(self, call_id: str, summary: CallSummary) -> None: ...
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]: ...
+    async def append_long_term_facts(
+        self, senior_id: str, new_facts: list[str]
+    ) -> None: ...
     async def create_alert(
         self, senior_id: str, call_id: str, type_: str, severity: str, message: str
     ) -> None: ...
@@ -82,6 +85,7 @@ class SupabaseDB:
             health_notes=row.get("health_notes"),
             is_active=row.get("is_active", True),
             agent_name=row.get("agent_name"),
+            long_term_facts=row.get("long_term_facts") or [],
             emergency_contact_phone=row.get("emergency_contact_phone"),
             emergency_on_no_answer=row.get("emergency_on_no_answer", False),
         )
@@ -179,6 +183,47 @@ class SupabaseDB:
             .execute()
         )
         return [r["summary"] for r in (res.data or []) if r.get("summary")]
+
+    async def append_long_term_facts(
+        self, senior_id: str, new_facts: list[str]
+    ) -> None:
+        """Append + dedupe long-term facts on a senior row.
+
+        Reads the current list, merges in new facts (case-insensitive dedup
+        on stripped text), and writes back. Race-prone if two calls finalize
+        simultaneously for the same senior, but that's vanishingly rare and
+        the loss is at most a handful of facts.
+        """
+        if not new_facts:
+            return
+        res = (
+            await self._client.table("seniors")
+            .select("long_term_facts")
+            .eq("id", senior_id)
+            .maybe_single()
+            .execute()
+        )
+        existing: list[str] = (res.data or {}).get("long_term_facts") or []
+        # Case-insensitive dedup; preserve original casing of first occurrence.
+        seen = {f.strip().lower() for f in existing if f and f.strip()}
+        for f in new_facts:
+            k = (f or "").strip()
+            if not k or k.lower() in seen:
+                continue
+            existing.append(k)
+            seen.add(k.lower())
+        try:
+            await self._client.table("seniors").update(
+                {"long_term_facts": existing}
+            ).eq("id", senior_id).execute()
+        except Exception as exc:
+            # Column may not be migrated yet on this database.
+            if "long_term_facts" in str(exc):
+                logger.warning(
+                    "long_term_facts column missing; skipping fact persistence"
+                )
+                return
+            raise
 
     async def create_alert(
         self, senior_id: str, call_id: str, type_: str, severity: str, message: str
@@ -299,6 +344,19 @@ class InMemoryDB:
 
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]:
         return list(reversed(self._summaries.get(senior_id, [])))[:limit]
+
+    async def append_long_term_facts(
+        self, senior_id: str, new_facts: list[str]
+    ) -> None:
+        senior = self._seniors.get(senior_id)
+        if not senior:
+            return
+        seen = {f.strip().lower() for f in senior.long_term_facts if f and f.strip()}
+        for f in new_facts:
+            k = (f or "").strip()
+            if k and k.lower() not in seen:
+                senior.long_term_facts.append(k)
+                seen.add(k.lower())
 
     async def create_alert(
         self, senior_id: str, call_id: str, type_: str, severity: str, message: str
