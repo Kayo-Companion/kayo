@@ -194,20 +194,44 @@ async def twilio_call_status(
     CallSid: str = Form(...),  # noqa: N803
     CallStatus: str = Form(...),  # noqa: N803
     To: str = Form(...),  # noqa: N803
+    AnsweredBy: str | None = Form(None),  # noqa: N803
+    CallDuration: str | None = Form(None),  # noqa: N803
 ) -> Response:
     """Twilio posts here when an outbound call ends (we wire the URL up in
-    `place_outbound_call`). If the call ended in `no-answer` / `busy` /
-    `failed` AND the senior has emergency_on_no_answer enabled, send an SMS
-    to the configured emergency contact.
+    `place_outbound_call`). Sends an SMS to the configured emergency contact
+    if the senior didn't actually reach Kayo on this call.
+
+    "Didn't reach Kayo" means any of:
+      - explicit no-answer / busy / failed status from Twilio
+      - status=completed but AMD says the line was a machine / voicemail
+      - status=completed with no AMD verdict and call <= 8s (voicemail
+        often picks up around 5-7s; if the call ended that fast we treat
+        it as a missed connect)
     """
     senior_id = request.query_params.get("senior_id")
+    answered_by = (AnsweredBy or "").lower().strip()
+    try:
+        duration_s = int(CallDuration or 0)
+    except ValueError:
+        duration_s = 0
+
     logger.info(
-        "Call status callback: sid=%s status=%s to=%s senior=%s",
-        CallSid, CallStatus, To, senior_id,
+        "Call status callback: sid=%s status=%s answered_by=%s dur=%ds to=%s senior=%s",
+        CallSid, CallStatus, answered_by or "(none)", duration_s, To, senior_id,
     )
 
-    NO_ANSWER_STATUSES = {"no-answer", "busy", "failed"}
-    if CallStatus not in NO_ANSWER_STATUSES:
+    failed_status = CallStatus in {"no-answer", "busy", "failed"}
+    machine_pickup = (
+        CallStatus == "completed" and answered_by in _MACHINE_ANSWERED_BY
+    )
+    likely_voicemail = (
+        CallStatus == "completed"
+        and duration_s > 0
+        and duration_s <= 8
+        and answered_by not in {"human"}
+    )
+
+    if not (failed_status or machine_pickup or likely_voicemail):
         return Response(status_code=204)
 
     db = get_db()
