@@ -294,6 +294,14 @@ class CallBridge:
         # Used to avoid firing duplicate `response.create` calls that race
         # semantic_vad's auto-create (when it does fire).
         self._response_in_progress = False
+        # status + timestamp of the most recent response.done event. Used to:
+        # - skip transcripts that arrive in the brief echo window after AI
+        #   finishes speaking (mic picks up Kayo's own audio as "user")
+        # - extend the patience pause after a user-cancelled response so we
+        #   wait for the whole interruption instead of replying to the first
+        #   1-second fragment
+        self._last_response_status: str | None = None
+        self._last_response_done_at: float | None = None
         # Pending response.create after the patience pause. We cancel it if a
         # new transcription arrives during the pause (user was still mid-
         # thought) — only the *latest* user turn should trigger a response.
@@ -504,16 +512,48 @@ class CallBridge:
                     if self._pending_response_task and not self._pending_response_task.done():
                         self._pending_response_task.cancel()
                         self._pending_response_task = None
+                    now = asyncio.get_event_loop().time()
                     GRACE_S = 1.5
+                    ECHO_GUARD_S = 0.6
                     in_grace = (
                         self._greeting_done_at is not None
-                        and (asyncio.get_event_loop().time() - self._greeting_done_at) < GRACE_S
+                        and (now - self._greeting_done_at) < GRACE_S
                     )
+                    # Echo guard: if our last response completed normally
+                    # within the last ~600ms, this transcript is almost
+                    # certainly speakerphone bleed / background noise that
+                    # semantic_vad mis-committed as "user said it". Skip.
+                    #
+                    # We only apply this when the response COMPLETED, not
+                    # when it was CANCELLED — a cancelled response means
+                    # the user really did interrupt, and we want to react.
+                    in_echo = (
+                        self._last_response_done_at is not None
+                        and self._last_response_status == "completed"
+                        and (now - self._last_response_done_at) < ECHO_GUARD_S
+                    )
+                    # Interrupt-aware patience: if the user just cancelled
+                    # Kayo's response, they're MID-INTERRUPTION. Their first
+                    # transcribed fragment is probably not the whole thought.
+                    # Wait longer (1s) to give them time to finish — newer
+                    # transcripts will cancel + reschedule this pending fire.
+                    is_post_interrupt = (
+                        self._last_response_status == "cancelled"
+                        and self._last_response_done_at is not None
+                        and (now - self._last_response_done_at) < 3.0
+                    )
+                    patience_s = 1.0 if is_post_interrupt else 0.0
+
                     if not self._greeting_done:
                         pass
                     elif in_grace:
                         logger.info(
-                            "Skip response.create: post-greeting grace period (transcript=%r)",
+                            "Skip response.create: post-greeting grace (transcript=%r)",
+                            text,
+                        )
+                    elif in_echo:
+                        logger.info(
+                            "Skip response.create: post-AI echo window (transcript=%r)",
                             text,
                         )
                     elif self._response_in_progress:
@@ -521,17 +561,8 @@ class CallBridge:
                     elif is_backchannel(text):
                         logger.info("Skip response.create: backchannel %r", text)
                     else:
-                        # Patience pause = 0: trust semantic_vad's end-of-turn
-                        # detection entirely and respond immediately. semantic_vad
-                        # with eagerness=medium already waits ~0.5-1s of silence
-                        # before committing, so we already have a built-in
-                        # "user paused mid-sentence" buffer. Stacking another
-                        # 400ms on top of that just adds perceived lag without
-                        # meaningfully reducing premature-response cases.
-                        # If we see Kayo cutting users off mid-sentence in
-                        # logs, dial this back up to 0.2-0.4s.
                         self._pending_response_task = asyncio.create_task(
-                            self._fire_response_after_pause(openai_ws, 0.0)
+                            self._fire_response_after_pause(openai_ws, patience_s)
                         )
 
                 # Note: we deliberately do NOT send response.cancel on
@@ -566,6 +597,9 @@ class CallBridge:
                     self._response_in_progress = True
                 elif etype == "response.done":
                     self._response_in_progress = False
+                    resp_obj = msg.get("response", {}) or {}
+                    self._last_response_status = resp_obj.get("status")
+                    self._last_response_done_at = asyncio.get_event_loop().time()
                     # Aggregate token usage. response.usage breakdown is the
                     # billing-grade source of truth.
                     delta = extract_usage(msg.get("response", {}) or {})
