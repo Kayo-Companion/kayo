@@ -34,21 +34,47 @@ def _twilio_client() -> Client:
     return Client(s.twilio_account_sid, s.twilio_auth_token)
 
 
+# AMD verdicts that mean "no human is on the line" — we hang up silently
+# without engaging the OpenAI Realtime bridge. Saves Twilio + OpenAI minutes
+# and avoids leaving a creepy AI voicemail.
+_MACHINE_ANSWERED_BY = {
+    "machine_start",
+    "machine_end_beep",
+    "machine_end_silence",
+    "machine_end_other",
+    "fax",
+}
+
+
 @router.post("/twilio/incoming")
 async def twilio_incoming(
     request: Request,
     CallSid: str = Form(...),  # noqa: N803 — Twilio param naming
     From: str = Form(...),  # noqa: N803
     To: str = Form(...),  # noqa: N803
+    AnsweredBy: str | None = Form(None),  # noqa: N803 — set when machine_detection is on
 ) -> Response:
     """TwiML response: open a bidirectional Media Stream to our WS endpoint.
 
     The senior_id can be passed in via query params (set when we place the
     outbound call). For inbound calls (a senior dialing in) we look up by
     phone number.
+
+    If Twilio's Answering Machine Detection determined the pickup is a
+    voicemail / fax / answering machine, hang up immediately — don't connect
+    the audio bridge. Otherwise we'd burn minutes and OpenAI cost talking to
+    a voicemail box, and the senior would later hear a confused half-call
+    recorded on their voicemail.
     """
     settings = get_settings()
     db = get_db()
+
+    if AnsweredBy and AnsweredBy.lower() in _MACHINE_ANSWERED_BY:
+        logger.info(
+            "Outbound call %s (to=%s) detected as %s — hanging up without engaging bridge",
+            CallSid, To, AnsweredBy,
+        )
+        return _twiml_response(_hangup_twiml())
 
     senior_id = request.query_params.get("senior_id")
     if not senior_id:
@@ -72,7 +98,10 @@ async def twilio_incoming(
     connect.stream(url=stream_url)
     response.append(connect)
 
-    logger.info("Incoming call %s for senior %s -> stream=%s", CallSid, senior_id, stream_url)
+    logger.info(
+        "Incoming call %s for senior %s answered_by=%s -> stream=%s",
+        CallSid, senior_id, AnsweredBy or "human", stream_url,
+    )
     return _twiml_response(str(response))
 
 
@@ -233,6 +262,13 @@ def _unknown_caller_twiml() -> str:
         language="ja-JP",
         voice="Polly.Mizuki",
     )
+    response.hangup()
+    return str(response)
+
+
+def _hangup_twiml() -> str:
+    """Silent immediate hangup. Used when AMD says the pickup is voicemail."""
+    response = VoiceResponse()
     response.hangup()
     return str(response)
 
