@@ -25,10 +25,10 @@ const WEEKDAY_LABELS: Record<Weekday, string> = {
   sun: "日",
 };
 
-const PLAN_INFO: Record<Plan, { name: string; price: number; minutes: number; perDay: string }> = {
-  light: { name: "ライト", price: 3980, minutes: 100, perDay: "1日 約3分" },
-  standard: { name: "スタンダード", price: 9800, minutes: 400, perDay: "1日 約13分" },
-  premium: { name: "プレミアム", price: 19800, minutes: 1000, perDay: "1日 約33分" },
+const PLAN_INFO: Record<Plan, { name: string; price: number; minutes: number }> = {
+  light: { name: "ライト", price: 3980, minutes: 100 },
+  standard: { name: "スタンダード", price: 9800, minutes: 400 },
+  premium: { name: "プレミアム", price: 19800, minutes: 1000 },
 };
 
 function formatSchedule(schedule: ScheduleEntry[]): string {
@@ -182,7 +182,7 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
                   <span className="ml-1 text-xs text-warm-gray">/月</span>
                 </div>
                 <div className="mt-1 text-[10px] text-warm-gray">
-                  {info.minutes}分・{info.perDay}
+                  毎月 {info.minutes.toLocaleString()}分
                 </div>
               </button>
             );
