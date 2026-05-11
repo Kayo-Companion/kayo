@@ -27,16 +27,31 @@ const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
  * iPhone-Screen-Time-style 7-day bar graph. Each bar = one day, height
  * scales to that day's total call minutes. Tap a bar to inline-show that
  * day's call summaries below.
+ *
+ * `tz` is the senior's call_timezone (e.g. "Asia/Tokyo"). We anchor the
+ * rightmost bar to TODAY in *that* timezone, not the browser's, so a
+ * buyer in PT viewing a Tokyo-based senior still sees their day labeled
+ * correctly (otherwise the rightmost cell drifts to yesterday).
  */
 export function ActivityBars({
   days,
   seniorName,
+  tz = "Asia/Tokyo",
 }: {
   days: DayCalls[];
   seniorName: string;
+  tz?: string;
 }) {
-  const today = useMemo(() => new Date(), []);
-  const week = useMemo(() => buildWeek(today, days), [today, days]);
+  const todayIso = useMemo(() => {
+    // ISO local-date string in the senior's timezone, e.g. "2026-05-12"
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  }, [tz]);
+  const week = useMemo(() => buildWeek(todayIso, days), [todayIso, days]);
   const max = Math.max(1, ...week.map((d) => d.total_minutes));
 
   // Default-select today (the rightmost bar) so users see something
@@ -179,35 +194,38 @@ interface WeekDay extends DayCalls {
   dayOfMonth: string;     // 「10」
 }
 
-function buildWeek(today: Date, days: DayCalls[]): WeekDay[] {
+function buildWeek(todayIso: string, days: DayCalls[]): WeekDay[] {
   // Map of date string -> DayCalls for fast lookup.
   const map = new Map<string, DayCalls>();
   for (const d of days) map.set(d.date, d);
 
+  // Parse the ISO date as a UTC midnight so date math is timezone-agnostic;
+  // we only do day-by-day arithmetic, never inspect hours.
+  const [yy, mm, dd] = todayIso.split("-").map(Number);
+  const todayUTC = new Date(Date.UTC(yy, (mm ?? 1) - 1, dd ?? 1));
+
   const out: WeekDay[] = [];
-  // Build last 7 days, oldest on the left, today on the right.
   for (let offset = 6; offset >= 0; offset--) {
-    const d = new Date(today);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - offset);
-    const iso = isoLocalDate(d);
+    const d = new Date(todayUTC);
+    d.setUTCDate(d.getUTCDate() - offset);
+    const iso = isoFromUTCDate(d);
     const existing = map.get(iso);
     out.push({
       date: iso,
       total_minutes: existing?.total_minutes ?? 0,
       calls: existing?.calls ?? [],
-      label: `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAY_LABELS[d.getDay()]}）`,
-      weekdayLabel: WEEKDAY_LABELS[d.getDay()],
-      dayOfMonth: String(d.getDate()),
+      label: `${d.getUTCMonth() + 1}月${d.getUTCDate()}日（${WEEKDAY_LABELS[d.getUTCDay()]}）`,
+      weekdayLabel: WEEKDAY_LABELS[d.getUTCDay()],
+      dayOfMonth: String(d.getUTCDate()),
     });
   }
   return out;
 }
 
-function isoLocalDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+function isoFromUTCDate(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 

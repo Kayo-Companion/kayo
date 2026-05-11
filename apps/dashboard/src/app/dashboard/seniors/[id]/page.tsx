@@ -93,7 +93,11 @@ export default async function SeniorDashboardPage({
               バーの高さで、その日にお話しした時間の長さがわかります。
             </p>
           </div>
-          <ActivityBars days={days} seniorName={senior.name} />
+          <ActivityBars
+            days={days}
+            seniorName={senior.name}
+            tz={senior.call_timezone || TZ}
+          />
         </GlassCard>
       </div>
     </main>

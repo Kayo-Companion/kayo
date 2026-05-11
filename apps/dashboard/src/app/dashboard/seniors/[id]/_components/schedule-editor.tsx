@@ -85,6 +85,9 @@ export function ScheduleEditor({
         <p className="mt-1 text-sm text-warm-brown/70">
           曜日と時刻を設定すると、その時間に自動でカヨからお電話します。
         </p>
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-coral/10 px-3 py-1 text-xs font-medium text-coral">
+          🕐 すべての時刻は日本時間（JST / UTC+9）です
+        </div>
       </div>
 
       <div className="space-y-3">
