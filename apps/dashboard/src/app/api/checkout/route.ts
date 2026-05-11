@@ -92,6 +92,12 @@ export async function POST(request: Request) {
     // signup. Stripe creates a Customer without an email; receipts are not
     // auto-mailed.
     line_items: [{ price: priceId, quantity: 1 }],
+    // Show a "Have a promo code?" field on the embedded checkout. Promo
+    // codes are created in Stripe Dashboard (Coupons → Promotion codes).
+    // The discount applies on top of the trial — e.g., "100% off for 1
+    // month" effectively extends the free trial; "50% off forever" gives
+    // a permanent discount.
+    allow_promotion_codes: true,
     subscription_data: {
       trial_period_days: 7,
       metadata: {

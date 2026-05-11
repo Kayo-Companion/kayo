@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ArrowRight, Phone, Loader2 } from "lucide-react";
+import { CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import {
   EmbeddedCheckout,
@@ -52,12 +52,6 @@ type CheckoutState =
 
 export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
   const [checkout, setCheckout] = useState<CheckoutState>({ kind: "review" });
-  const [testStatus, setTestStatus] = useState<
-    | { kind: "idle" }
-    | { kind: "calling" }
-    | { kind: "success"; phone: string }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
 
   const handleStartCheckout = async () => {
     setCheckout({ kind: "loading" });
@@ -83,25 +77,6 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
       return;
     }
     setCheckout({ kind: "embedded", clientSecret: body.clientSecret });
-  };
-
-  const handleTestCall = async () => {
-    setTestStatus({ kind: "calling" });
-    const response = await fetch("/api/test-call", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setTestStatus({
-        kind: "error",
-        message:
-          body?.detail ?? body?.error ?? "発信に失敗しました。voice serviceとtunnelが起動しているかご確認ください。",
-      });
-      return;
-    }
-    setTestStatus({ kind: "success", phone: data.recipientPhone });
   };
 
   const audienceLabel =
@@ -240,38 +215,6 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
       {checkout.kind === "error" && (
         <p className="text-center text-sm text-coral">{checkout.message}</p>
       )}
-
-      {/* Dev / test mode — bypass Stripe and trigger a real call right now. */}
-      <div className="rounded-2xl border border-dashed border-rose-300/60 bg-white/40 p-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-warm-gray">
-          開発・テスト用
-        </div>
-        <p className="mb-3 text-xs text-warm-brown/75">
-          会計をスキップして、今すぐ
-          {data.recipientPhone}
-          にカヨから電話をかけます。voice serviceが起動している必要があります。
-        </p>
-        <Button
-          variant="secondary"
-          size="md"
-          className="w-full"
-          onClick={handleTestCall}
-          disabled={testStatus.kind === "calling"}
-        >
-          <Phone className="h-4 w-4" />
-          {testStatus.kind === "calling"
-            ? "発信中..."
-            : "テストで発信（決済スキップ）"}
-        </Button>
-        {testStatus.kind === "success" && (
-          <p className="mt-2 text-xs text-emerald-600">
-            ✓ 発信しました。{testStatus.phone} にカヨから電話がかかります。
-          </p>
-        )}
-        {testStatus.kind === "error" && (
-          <p className="mt-2 text-xs text-coral">{testStatus.message}</p>
-        )}
-      </div>
     </div>
   );
 }
