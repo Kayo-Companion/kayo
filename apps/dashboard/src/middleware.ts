@@ -44,7 +44,19 @@ export async function middleware(request: NextRequest) {
   // IMPORTANT: do not put any code between createServerClient() and
   // getUser() — that's the call that triggers the token refresh + cookie
   // rotation.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // If a logged-in user hits the login page, skip straight to dashboard.
+  // (We deliberately don't redirect /sign-up paths — /sign-up/return and
+  // /sign-up/verify-final are part of the post-payment auto-login flow
+  // and must run even when the user is already authenticated.)
+  if (user && request.nextUrl.pathname === "/sign-in") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }
