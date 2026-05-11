@@ -27,7 +27,7 @@ export default async function SeniorSettingsPage({
   const { data: senior } = await supabase
     .from("seniors")
     .select(
-      "id, name, phone, schedule, family_id, is_self, emergency_contact_phone, emergency_on_no_answer, agent_name"
+      "id, name, phone, schedule, family_id, is_self, emergency_contact_phone, emergency_on_no_answer, agent_name, daily_check_deadline"
     )
     .eq("id", id)
     .maybeSingle();
@@ -75,7 +75,8 @@ export default async function SeniorSettingsPage({
         <EmergencySettings
           seniorId={senior.id}
           seniorName={senior.name}
-          initialEnabled={Boolean(senior.emergency_on_no_answer)}
+          initialOnNoAnswer={Boolean(senior.emergency_on_no_answer)}
+          initialDailyDeadline={senior.daily_check_deadline ?? null}
           buyerPhone={user.phone ? `+${user.phone}` : null}
         />
       </div>

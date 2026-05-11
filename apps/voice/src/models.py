@@ -61,10 +61,17 @@ class Senior(BaseModel):
     # wife is カヨコ, etc.). Appended after each call by the summarizer with
     # dedup. Distinct from recent-call summaries which are short-term.
     long_term_facts: list[str] = Field(default_factory=list)
-    # Emergency contact: SMS sent here when an outbound call ends with
-    # no-answer / busy / failed AND emergency_on_no_answer is true.
+    # 安否確認モード ("Safety check mode") — two independent triggers,
+    # both SMS to emergency_contact_phone:
+    #
+    # 1. Per-call: when an outbound call ends with no-answer / busy /
+    #    failed / voicemail AND emergency_on_no_answer is True.
+    # 2. Daily: if NO call (in or out, with real conversation) has
+    #    happened by daily_check_deadline (HH:MM in the senior's TZ).
+    #    NULL = daily-check disabled.
     emergency_contact_phone: str | None = None
     emergency_on_no_answer: bool = False
+    daily_check_deadline: str | None = None  # "HH:MM" or None
 
 
 class Family(BaseModel):

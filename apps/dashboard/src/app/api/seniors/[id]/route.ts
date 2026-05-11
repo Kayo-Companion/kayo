@@ -24,6 +24,7 @@ interface PatchBody {
   emergency_on_no_answer?: unknown;
   emergency_contact_phone?: unknown;
   agent_name?: unknown;
+  daily_check_deadline?: unknown;
 }
 
 /**
@@ -93,6 +94,22 @@ export async function PATCH(
     }
   }
 
+  if (body.daily_check_deadline !== undefined) {
+    if (body.daily_check_deadline === null || body.daily_check_deadline === "") {
+      update.daily_check_deadline = null;
+    } else if (
+      typeof body.daily_check_deadline === "string" &&
+      /^\d{2}:\d{2}$/.test(body.daily_check_deadline)
+    ) {
+      update.daily_check_deadline = body.daily_check_deadline;
+    } else {
+      return NextResponse.json(
+        { error: "invalid_daily_check_deadline" },
+        { status: 400 }
+      );
+    }
+  }
+
   if (body.emergency_contact_phone !== undefined) {
     const raw = body.emergency_contact_phone;
     if (raw === null || raw === "") {
@@ -142,7 +159,12 @@ export async function PATCH(
     console.error("seniors update failed:", error);
     // If newer columns (emergency_*, agent_name) aren't migrated yet, retry
     // without them so the rest of the update still lands.
-    const newish = ["emergency_on_no_answer", "emergency_contact_phone", "agent_name"];
+    const newish = [
+      "emergency_on_no_answer",
+      "emergency_contact_phone",
+      "agent_name",
+      "daily_check_deadline",
+    ];
     if (newish.some((k) => k in update)) {
       const fallback = { ...update };
       for (const k of newish) delete fallback[k];

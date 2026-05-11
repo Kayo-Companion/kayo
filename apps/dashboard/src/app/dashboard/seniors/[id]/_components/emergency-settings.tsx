@@ -1,127 +1,228 @@
 "use client";
 
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Save } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 
 /**
- * Single-toggle emergency-contact section. Emergency contact phone is
- * automatically the buyer's login phone (passed in as buyerPhone) — no
- * separate input field. Toggle auto-saves on change.
+ * 安否確認モード — two independent SMS triggers:
+ *
+ *   (1) No-pickup: Kayo's scheduled call goes unanswered → SMS the buyer
+ *   (2) Daily check: no call in EITHER direction by the chosen JST time →
+ *       SMS the buyer
+ *
+ * Destination is the buyer's login phone (passed in), so no separate
+ * phone-entry field. Both triggers can be enabled/disabled independently.
+ * (1) is a simple toggle and auto-saves. (2) has a time picker and a
+ * manual save button so the user isn't pestered every keystroke.
  */
 export function EmergencySettings({
   seniorId,
   seniorName,
-  initialEnabled,
+  initialOnNoAnswer,
+  initialDailyDeadline,
   buyerPhone,
 }: {
   seniorId: string;
   seniorName: string;
-  initialEnabled: boolean;
+  initialOnNoAnswer: boolean;
+  initialDailyDeadline: string | null;
   buyerPhone: string | null;
 }) {
   const router = useRouter();
-  const [enabled, setEnabled] = useState(initialEnabled);
-  const [status, setStatus] = useState<
-    | { kind: "idle" }
-    | { kind: "saving" }
-    | { kind: "saved" }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
 
-  const toggle = async () => {
-    if (status.kind === "saving") return;
+  // (1) No-pickup toggle — auto-saves on flip.
+  const [onNoAnswer, setOnNoAnswer] = useState(initialOnNoAnswer);
+  const [togglingNoAnswer, setTogglingNoAnswer] = useState(false);
+
+  // (2) Daily deadline — time picker, manual save.
+  const [dailyDeadline, setDailyDeadline] = useState(initialDailyDeadline ?? "");
+  const [savingDaily, setSavingDaily] = useState(false);
+
+  const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const flashSaved = (key: string) => {
+    setSavedFlash(key);
+    setTimeout(() => setSavedFlash((cur) => (cur === key ? null : cur)), 1500);
+  };
+
+  const toggleNoAnswer = async () => {
+    if (togglingNoAnswer) return;
     if (!buyerPhone) {
-      setStatus({
-        kind: "error",
-        message: "ログイン用の電話番号が見つかりません。",
-      });
+      setError("ログイン用の電話番号が見つかりません。");
       return;
     }
-    const next = !enabled;
-    setEnabled(next);
-    setStatus({ kind: "saving" });
+    const next = !onNoAnswer;
+    setOnNoAnswer(next);
+    setTogglingNoAnswer(true);
+    setError(null);
     try {
       const res = await fetch(`/api/seniors/${seniorId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           emergency_on_no_answer: next,
-          // When turning on, stamp the buyer's phone as the destination.
-          // When turning off, clear it (we don't need the address anymore).
           emergency_contact_phone: next ? buyerPhone : null,
         }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        // Roll back the optimistic flip.
-        setEnabled(!next);
-        setStatus({
-          kind: "error",
-          message: body.message ?? "保存に失敗しました。",
-        });
-        return;
+        setOnNoAnswer(!next);
+        setError("保存に失敗しました。");
+      } else {
+        flashSaved("noanswer");
+        router.refresh();
       }
-      setStatus({ kind: "saved" });
-      router.refresh();
     } catch {
-      setEnabled(!next);
-      setStatus({ kind: "error", message: "通信エラーが発生しました。" });
+      setOnNoAnswer(!next);
+      setError("通信エラーが発生しました。");
+    } finally {
+      setTogglingNoAnswer(false);
     }
   };
 
+  const saveDaily = async () => {
+    if (savingDaily) return;
+    setSavingDaily(true);
+    setError(null);
+    const value = dailyDeadline.trim();
+    // Empty string = disable
+    if (value && !/^\d{2}:\d{2}$/.test(value)) {
+      setError("時刻はHH:MMの形式で入力してください。");
+      setSavingDaily(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/seniors/${seniorId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          daily_check_deadline: value || null,
+          // If enabling daily-check for the first time, also stamp the buyer
+          // phone as the emergency contact destination. Server keeps any
+          // existing value when this field isn't sent.
+          ...(value && buyerPhone
+            ? { emergency_contact_phone: buyerPhone }
+            : {}),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(
+          body.error === "invalid_daily_check_deadline"
+            ? "時刻の形式が正しくありません。"
+            : "保存に失敗しました。"
+        );
+      } else {
+        flashSaved("daily");
+        router.refresh();
+      }
+    } catch {
+      setError("通信エラーが発生しました。");
+    } finally {
+      setSavingDaily(false);
+    }
+  };
+
+  const dailyDirty =
+    dailyDeadline.trim() !== (initialDailyDeadline ?? "").trim();
+
   return (
-    <GlassCard className="space-y-4 p-6 md:p-8">
+    <GlassCard className="space-y-5 p-6 md:p-8">
       <div>
         <h2 className="font-serif text-xl font-medium text-warm-brown">
-          通知
+          安否確認モード
         </h2>
         <p className="mt-1 text-sm text-warm-brown/70">
-          カヨからのお電話に出られなかった時、SMSでお知らせします。
+          {seniorName}さんに何かあった時に気づけるよう、ご家族へ自動でSMSをお送りします。
+        </p>
+        <p className="mt-1.5 text-xs text-warm-gray">
+          送信先：{buyerPhone ? formatPhone(buyerPhone) : "（未設定）"}
         </p>
       </div>
 
+      {/* (1) No-pickup toggle */}
       <div className="flex items-start justify-between gap-4 rounded-2xl border border-rose-300/40 bg-white/60 p-4">
         <div className="flex-1 space-y-1">
           <div className="text-sm font-medium text-warm-brown">
-            {seniorName}さんが電話に出ない場合に通知を受け取る
+            {seniorName}さんが電話に出ない場合に通知
           </div>
           <p className="text-xs text-warm-gray">
-            送信先：{buyerPhone ? formatPhone(buyerPhone) : "（未設定）"}
+            カヨからの予定の電話に応答がなかった時にSMSをお送りします。
           </p>
         </div>
         <button
           type="button"
           role="switch"
-          aria-checked={enabled}
-          onClick={toggle}
-          disabled={status.kind === "saving" || !buyerPhone}
+          aria-checked={onNoAnswer}
+          onClick={toggleNoAnswer}
+          disabled={togglingNoAnswer || !buyerPhone}
           className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-            enabled ? "bg-coral" : "bg-rose-200"
+            onNoAnswer ? "bg-coral" : "bg-rose-200"
           }`}
         >
           <span
             className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-              enabled ? "translate-x-6" : "translate-x-1"
+              onNoAnswer ? "translate-x-6" : "translate-x-1"
             }`}
           />
         </button>
       </div>
 
-      {status.kind === "saving" && (
-        <p className="flex items-center gap-1.5 text-xs text-warm-gray">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          保存中…
+      {/* (2) Daily-check time picker */}
+      <div className="space-y-2 rounded-2xl border border-rose-300/40 bg-white/60 p-4">
+        <div className="text-sm font-medium text-warm-brown">
+          毎日この時間までに通話がない場合に通知
+        </div>
+        <p className="text-xs text-warm-gray">
+          {seniorName}さんとカヨの間で（着信・発信どちらも）1回も通話がないまま
+          設定時刻を過ぎたら、SMSでお知らせします。日本時間（JST）です。
         </p>
-      )}
-      {status.kind === "saved" && (
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="time"
+            value={dailyDeadline}
+            onChange={(e) => setDailyDeadline(e.target.value)}
+            className="rounded-xl border border-rose-300/50 bg-white/90 px-3 py-2 text-warm-brown focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20"
+          />
+          {dailyDeadline && (
+            <button
+              type="button"
+              onClick={() => setDailyDeadline("")}
+              className="text-xs text-warm-gray hover:text-coral"
+            >
+              クリア（無効化）
+            </button>
+          )}
+          <div className="ml-auto">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={saveDaily}
+              disabled={!dailyDirty || savingDaily || !buyerPhone}
+            >
+              {savingDaily ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> 保存中…
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" /> 保存
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {savedFlash && (
         <p className="text-xs text-emerald-600">✓ 保存しました</p>
       )}
-      {status.kind === "error" && (
+      {error && (
         <p className="flex items-center gap-1 text-xs text-coral">
-          <AlertTriangle className="h-3 w-3" />
-          {status.message}
+          <AlertTriangle className="h-3 w-3" /> {error}
         </p>
       )}
     </GlassCard>

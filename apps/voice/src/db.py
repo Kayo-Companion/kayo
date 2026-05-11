@@ -47,6 +47,9 @@ class DB(Protocol):
     async def append_long_term_facts(
         self, senior_id: str, new_facts: list[str]
     ) -> None: ...
+    async def had_real_call_since(
+        self, senior_id: str, since_utc: datetime
+    ) -> bool: ...
     async def create_alert(
         self, senior_id: str, call_id: str, type_: str, severity: str, message: str
     ) -> None: ...
@@ -94,6 +97,7 @@ class SupabaseDB:
             long_term_facts=row.get("long_term_facts") or [],
             emergency_contact_phone=row.get("emergency_contact_phone"),
             emergency_on_no_answer=row.get("emergency_on_no_answer", False),
+            daily_check_deadline=row.get("daily_check_deadline"),
         )
 
     async def get_senior(self, senior_id: str) -> Senior | None:
@@ -199,6 +203,27 @@ class SupabaseDB:
             if len(out) >= limit:
                 break
         return out
+
+    async def had_real_call_since(
+        self, senior_id: str, since_utc: datetime
+    ) -> bool:
+        """True if a call with actual conversation started after since_utc.
+
+        Used by the daily safety-check scheduler. We deliberately EXCLUDE
+        rows whose summary equals MISSED_CALL_SUMMARY — those count as
+        "didn't really happen" for safety purposes.
+        """
+        res = (
+            await self._client.table("calls")
+            .select("id, summary")
+            .eq("senior_id", senior_id)
+            .gte("started_at", since_utc.isoformat())
+            .execute()
+        )
+        for row in res.data or []:
+            if (row.get("summary") or "") != MISSED_CALL_SUMMARY:
+                return True
+        return False
 
     async def append_long_term_facts(
         self, senior_id: str, new_facts: list[str]
@@ -374,6 +399,19 @@ class InMemoryDB:
             if k and k.lower() not in seen:
                 senior.long_term_facts.append(k)
                 seen.add(k.lower())
+
+    async def had_real_call_since(
+        self, senior_id: str, since_utc: datetime
+    ) -> bool:
+        for c in self._calls.values():
+            if c.senior_id != senior_id:
+                continue
+            if c.started_at < since_utc:
+                continue
+            if (c.summary or "") == MISSED_CALL_SUMMARY:
+                continue
+            return True
+        return False
 
     async def create_alert(
         self, senior_id: str, call_id: str, type_: str, severity: str, message: str
