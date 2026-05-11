@@ -21,6 +21,12 @@ from .models import Call, CallStatus, CallSummary, ScheduleEntry, Senior
 
 logger = logging.getLogger(__name__)
 
+# Sentinel summary written to calls that ended in voicemail / no answer /
+# immediate hang-up. Stamped by twilio_handler.twilio_stream when the bridge
+# completes with zero user turns. Excluded from get_recent_summaries so we
+# don't leak "nothing happened" into the next call's system prompt.
+MISSED_CALL_SUMMARY = "（電話に出られませんでした）"
+
 
 class DB(Protocol):
     async def get_senior(self, senior_id: str) -> Senior | None: ...
@@ -173,16 +179,26 @@ class SupabaseDB:
         ).eq("id", call_id).execute()
 
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]:
+        # Fetch a wider window than `limit` so we still return `limit` real
+        # summaries after filtering out the MISSED_CALL_SUMMARY sentinel.
         res = (
             await self._client.table("calls")
             .select("summary")
             .eq("senior_id", senior_id)
             .not_.is_("summary", "null")
             .order("started_at", desc=True)
-            .limit(limit)
+            .limit(limit * 3)
             .execute()
         )
-        return [r["summary"] for r in (res.data or []) if r.get("summary")]
+        out: list[str] = []
+        for r in res.data or []:
+            s = r.get("summary")
+            if not s or s == MISSED_CALL_SUMMARY:
+                continue
+            out.append(s)
+            if len(out) >= limit:
+                break
+        return out
 
     async def append_long_term_facts(
         self, senior_id: str, new_facts: list[str]
@@ -343,7 +359,8 @@ class InMemoryDB:
         self._summaries.setdefault(call.senior_id, []).append(summary.summary)
 
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]:
-        return list(reversed(self._summaries.get(senior_id, [])))[:limit]
+        all_rev = list(reversed(self._summaries.get(senior_id, [])))
+        return [s for s in all_rev if s and s != MISSED_CALL_SUMMARY][:limit]
 
     async def append_long_term_facts(
         self, senior_id: str, new_facts: list[str]

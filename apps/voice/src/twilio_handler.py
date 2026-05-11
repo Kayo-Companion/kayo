@@ -20,8 +20,9 @@ from twilio.rest import Client
 from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from .config import get_settings
-from .db import get_db, minutes_for_call
+from .db import MISSED_CALL_SUMMARY, get_db, minutes_for_call
 from .memory import summarize_and_persist
+from .models import CallSummary, Mood
 from .notifications import notify_distress
 from .openai_bridge import CallBridge
 
@@ -174,7 +175,34 @@ async def twilio_stream(websocket: WebSocket, senior_id: str) -> None:
         except Exception:
             logger.exception("Failed to record %d minutes for family %s", used_minutes, senior.family_id)
 
-    if transcript:
+    # Did a real human ever talk on this call? Voicemail / AMD-inconclusive
+    # / immediate-hangup all result in a bridge run with zero user turns
+    # (just Kayo's greeting going into the void). Don't run those through
+    # the summarizer — the LLM hallucinates a "conversation" from nothing
+    # ("しゅんすけさんは元気そうです"), which then leaks into the NEXT call's
+    # past_summaries and confuses the agent.
+    user_turns = sum(1 for t in (transcript or []) if t.get("role") == "user")
+    is_missed = user_turns == 0 or duration_s < 8
+
+    if is_missed:
+        logger.info(
+            "Missed call (user_turns=%d, duration=%.1fs) — skipping summarizer for %s",
+            user_turns, duration_s, call.id,
+        )
+        try:
+            await db.update_call_summary(
+                call_id=call.id,
+                summary=CallSummary(
+                    summary=MISSED_CALL_SUMMARY,
+                    topics=[],
+                    mood=Mood.NEUTRAL,
+                    distress_detected=False,
+                    distress_reason=None,
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to mark call %s as missed", call.id)
+    elif transcript:
         try:
             summary = await summarize_and_persist(
                 call_id=call.id,
