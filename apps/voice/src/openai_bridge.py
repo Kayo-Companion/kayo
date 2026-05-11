@@ -521,8 +521,17 @@ class CallBridge:
                     elif is_backchannel(text):
                         logger.info("Skip response.create: backchannel %r", text)
                     else:
+                        # Patience pause = 0: trust semantic_vad's end-of-turn
+                        # detection entirely and respond immediately. semantic_vad
+                        # with eagerness=medium already waits ~0.5-1s of silence
+                        # before committing, so we already have a built-in
+                        # "user paused mid-sentence" buffer. Stacking another
+                        # 400ms on top of that just adds perceived lag without
+                        # meaningfully reducing premature-response cases.
+                        # If we see Kayo cutting users off mid-sentence in
+                        # logs, dial this back up to 0.2-0.4s.
                         self._pending_response_task = asyncio.create_task(
-                            self._fire_response_after_pause(openai_ws, 0.4)
+                            self._fire_response_after_pause(openai_ws, 0.0)
                         )
 
                 # Note: we deliberately do NOT send response.cancel on
