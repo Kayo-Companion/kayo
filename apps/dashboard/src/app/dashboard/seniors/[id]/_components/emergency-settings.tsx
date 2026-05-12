@@ -1,9 +1,8 @@
 "use client";
 
-import { Loader2, AlertTriangle, Save } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 
 /**
@@ -15,9 +14,11 @@ import { GlassCard } from "@/components/ui/glass-card";
  *
  * Destination is the buyer's login phone (passed in), so no separate
  * phone-entry field. Both triggers can be enabled/disabled independently.
- * (1) is a simple toggle and auto-saves. (2) has a time picker and a
- * manual save button so the user isn't pestered every keystroke.
+ * Both are simple toggles that auto-save. (2) also exposes a time picker
+ * (visible while enabled) which auto-saves on change.
  */
+
+const DEFAULT_DAILY_DEADLINE = "21:00";
 export function EmergencySettings({
   seniorId,
   seniorName,
@@ -37,9 +38,10 @@ export function EmergencySettings({
   const [onNoAnswer, setOnNoAnswer] = useState(initialOnNoAnswer);
   const [togglingNoAnswer, setTogglingNoAnswer] = useState(false);
 
-  // (2) Daily deadline — time picker, manual save.
+  // (2) Daily deadline — toggle + time picker, both auto-save.
   const [dailyDeadline, setDailyDeadline] = useState(initialDailyDeadline ?? "");
   const [savingDaily, setSavingDaily] = useState(false);
+  const dailyEnabled = dailyDeadline.trim() !== "";
 
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,17 +85,19 @@ export function EmergencySettings({
     }
   };
 
-  const saveDaily = async () => {
+  // Persist a daily-check value. Pass "" to disable.
+  const persistDaily = async (next: string) => {
     if (savingDaily) return;
-    setSavingDaily(true);
-    setError(null);
-    const value = dailyDeadline.trim();
+    const value = next.trim();
     // Empty string = disable
     if (value && !/^\d{2}:\d{2}$/.test(value)) {
       setError("時刻はHH:MMの形式で入力してください。");
-      setSavingDaily(false);
       return;
     }
+    const previous = dailyDeadline;
+    setDailyDeadline(value);
+    setSavingDaily(true);
+    setError(null);
     try {
       const res = await fetch(`/api/seniors/${seniorId}`, {
         method: "PATCH",
@@ -110,6 +114,7 @@ export function EmergencySettings({
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        setDailyDeadline(previous);
         setError(
           body.error === "invalid_daily_check_deadline"
             ? "時刻の形式が正しくありません。"
@@ -120,14 +125,25 @@ export function EmergencySettings({
         router.refresh();
       }
     } catch {
+      setDailyDeadline(previous);
       setError("通信エラーが発生しました。");
     } finally {
       setSavingDaily(false);
     }
   };
 
-  const dailyDirty =
-    dailyDeadline.trim() !== (initialDailyDeadline ?? "").trim();
+  const toggleDaily = () => {
+    if (savingDaily) return;
+    if (!buyerPhone) {
+      setError("ログイン用の電話番号が見つかりません。");
+      return;
+    }
+    if (dailyEnabled) {
+      void persistDaily("");
+    } else {
+      void persistDaily(initialDailyDeadline || DEFAULT_DAILY_DEADLINE);
+    }
+  };
 
   return (
     <GlassCard className="space-y-5 p-6 md:p-8">
@@ -171,50 +187,46 @@ export function EmergencySettings({
         </button>
       </div>
 
-      {/* (2) Daily-check time picker */}
+      {/* (2) Daily-check toggle + (when enabled) time picker */}
       <div className="space-y-2 rounded-2xl border border-rose-300/40 bg-white/60 p-4">
-        <div className="text-sm font-medium text-warm-brown">
-          毎日この時間までに通話がない場合に通知
-        </div>
-        <p className="text-xs text-warm-gray">
-          {seniorName}さんとカヨの間で（着信・発信どちらも）1回も通話がないまま
-          設定時刻を過ぎたら、SMSでお知らせします。日本時間（JST）です。
-        </p>
-        <div className="flex items-center gap-2 pt-1">
-          <input
-            type="time"
-            value={dailyDeadline}
-            onChange={(e) => setDailyDeadline(e.target.value)}
-            className="rounded-xl border border-rose-300/50 bg-white/90 px-3 py-2 text-warm-brown focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20"
-          />
-          {dailyDeadline && (
-            <button
-              type="button"
-              onClick={() => setDailyDeadline("")}
-              className="text-xs text-warm-gray hover:text-coral"
-            >
-              クリア（無効化）
-            </button>
-          )}
-          <div className="ml-auto">
-            <Button
-              variant="primary"
-              size="md"
-              onClick={saveDaily}
-              disabled={!dailyDirty || savingDaily || !buyerPhone}
-            >
-              {savingDaily ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> 保存中…
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4" /> 保存
-                </>
-              )}
-            </Button>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 space-y-1">
+            <div className="text-sm font-medium text-warm-brown">
+              毎日この時間までに通話がない場合に通知
+            </div>
+            <p className="text-xs text-warm-gray">
+              {seniorName}さんとカヨの間で（着信・発信どちらも）1回も通話がないまま
+              設定時刻を過ぎたら、SMSでお知らせします。日本時間（JST）です。
+            </p>
           </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={dailyEnabled}
+            onClick={toggleDaily}
+            disabled={savingDaily || !buyerPhone}
+            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              dailyEnabled ? "bg-coral" : "bg-rose-200"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                dailyEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
         </div>
+        {dailyEnabled && (
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="time"
+              value={dailyDeadline}
+              onChange={(e) => persistDaily(e.target.value)}
+              disabled={savingDaily}
+              className="rounded-xl border border-rose-300/50 bg-white/90 px-3 py-2 text-warm-brown focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20 disabled:opacity-50"
+            />
+          </div>
+        )}
       </div>
 
       {savedFlash && (
