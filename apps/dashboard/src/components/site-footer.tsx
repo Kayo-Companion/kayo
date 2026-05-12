@@ -7,7 +7,7 @@ const columns = [
     links: [
       { label: "料金", href: "#pricing" },
       { label: "よくある質問", href: "#faq" },
-      { label: "お問い合わせ", href: "/contact" },
+      { label: "お問い合わせ", href: "mailto:snakatani0401@gmail.com" },
     ],
   },
   {
@@ -87,7 +87,13 @@ export function SiteFooter() {
             © 2026 Kayo Inc. All rights reserved.
           </div>
           <div className="text-xs text-warm-gray">
-            お問い合わせ: hello@kayo.me
+            お問い合わせ:{" "}
+            <a
+              href="mailto:snakatani0401@gmail.com"
+              className="hover:text-coral"
+            >
+              snakatani0401@gmail.com
+            </a>
           </div>
         </div>
       </div>

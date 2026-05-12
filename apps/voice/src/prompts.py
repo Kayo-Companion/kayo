@@ -1,18 +1,26 @@
-"""Model-aware prompt builder for Kayo.
+"""Variant- and model-aware prompt builder for Kayo.
 
-Per-model template content lives in:
-  - prompts_mini.py        (gpt-realtime-mini)
-  - prompts_realtime2.py   (gpt-realtime-2)
+Three prompt configurations are available:
 
-This module owns the shared utilities (schedule formatting, next-call
-phrasing, opening-script generation) and selects the right template
-based on the configured OpenAI model.
+  - companion + mini         (prompts_mini.py)
+  - companion + realtime-2   (prompts_realtime2.py — currently identical
+                              to mini; will diverge once tuned)
+  - smart    + any model     (prompts_smart.py — ChatGPT-style)
 
-The only model-specific content right now is the system instructions
-template (`KAYO_SYSTEM_PROMPT_TEMPLATE`) and the opening-greeting meta-
-instructions (`OPENING_INSTRUCTIONS_TEMPLATE`). The greeting *script*
-that Kayo actually reads (the audible opening line) is shared because
-it's business logic, not model tuning.
+Selection rules:
+  1. If `KAYO_PROMPT_VARIANT=smart`, always use prompts_smart.py
+     regardless of model.
+  2. Otherwise (companion variant), pick by model family:
+       - "mini" in model name → prompts_mini.py
+       - everything else       → prompts_realtime2.py
+
+This lets you compare:
+  A) mini model + companion prompt          (current default)
+  B) realtime-2 model + companion prompt    (same persona, smarter model)
+  C) mini model + smart prompt              (cheap model + better prompt)
+
+by flipping just env vars in Railway. The greeting *script* Kayo reads
+(the audible opening line) is shared business logic across all variants.
 """
 
 from __future__ import annotations
@@ -21,7 +29,8 @@ from datetime import datetime
 
 import pytz
 
-from . import prompts_mini, prompts_realtime2
+from . import prompts_mini, prompts_realtime2, prompts_smart
+from .config import get_settings
 from .models import ScheduleEntry, Senior
 
 _WEEKDAY_JP = {
@@ -91,28 +100,46 @@ def _format_schedule(schedule: list[ScheduleEntry]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Model selection
+# Variant + model selection
 # ---------------------------------------------------------------------------
+
+# Valid values for KAYO_PROMPT_VARIANT.
+PROMPT_VARIANT_COMPANION = "companion"
+PROMPT_VARIANT_SMART = "smart"
+
 
 def _is_mini(model: str | None) -> bool:
     """True if the configured model is in the gpt-realtime-mini family."""
     return bool(model) and "mini" in model.lower()
 
 
+def _variant() -> str:
+    """Read KAYO_PROMPT_VARIANT from settings. Unknown values fall back
+    to companion so a typo doesn't silently switch personas."""
+    raw = (get_settings().kayo_prompt_variant or "").strip().lower()
+    if raw == PROMPT_VARIANT_SMART:
+        return PROMPT_VARIANT_SMART
+    return PROMPT_VARIANT_COMPANION
+
+
+def _prompt_module(model: str | None):
+    """Pick which prompt module (mini / realtime2 / smart) to use.
+
+    Variant overrides model selection — smart variant uses prompts_smart
+    on ANY model. Within the companion variant, model picks between the
+    mini-tuned and realtime-2-tuned companion prompts.
+    """
+    if _variant() == PROMPT_VARIANT_SMART:
+        return prompts_smart
+    return prompts_mini if _is_mini(model) else prompts_realtime2
+
+
 def _system_template(model: str | None) -> str:
-    return (
-        prompts_mini.KAYO_SYSTEM_PROMPT_TEMPLATE
-        if _is_mini(model)
-        else prompts_realtime2.KAYO_SYSTEM_PROMPT_TEMPLATE
-    )
+    return _prompt_module(model).KAYO_SYSTEM_PROMPT_TEMPLATE
 
 
 def _opening_template(model: str | None) -> str:
-    return (
-        prompts_mini.OPENING_INSTRUCTIONS_TEMPLATE
-        if _is_mini(model)
-        else prompts_realtime2.OPENING_INSTRUCTIONS_TEMPLATE
-    )
+    return _prompt_module(model).OPENING_INSTRUCTIONS_TEMPLATE
 
 
 # ---------------------------------------------------------------------------

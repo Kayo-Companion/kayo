@@ -6,6 +6,7 @@ import { ResearchSection } from "@/components/sections/research-section";
 import { SafetySection } from "@/components/sections/safety-section";
 import { KayoPersonaSection } from "@/components/sections/kayo-persona-section";
 import { DashboardPreviewSection } from "@/components/sections/dashboard-preview-section";
+import { AnyDeviceBand } from "@/components/sections/any-device-band";
 import { MultiUserBand } from "@/components/sections/multi-user-band";
 import { PricingSection } from "@/components/sections/pricing-section";
 import { FaqSection } from "@/components/sections/faq-section";
@@ -25,7 +26,12 @@ const jsonLd = {
       name: "カヨ",
       url: SITE_URL,
       logo: `${SITE_URL}/logo-mark.png`,
-      email: "hello@kayo.me",
+      email: "snakatani0401@gmail.com",
+      founder: {
+        "@type": "Person",
+        name: "中谷マーク駿介",
+        jobTitle: "代表者",
+      },
       areaServed: "JP",
       inLanguage: "ja",
     },
@@ -125,6 +131,7 @@ export default function HomePage() {
       </section>
       <KayoPersonaSection />
       <DashboardPreviewSection />
+      <AnyDeviceBand />
       <MultiUserBand />
       <section id="pricing">
         <PricingSection />

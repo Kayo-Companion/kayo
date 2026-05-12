@@ -1,14 +1,17 @@
-"""Prompts tuned for `gpt-realtime-2`.
+"""Prompts for the "companion" variant on `gpt-realtime-2`.
 
-Currently identical to prompts_mini.py — edit this file independently
-when you want -2 to behave differently from mini.
+Currently identical to prompts_mini.py — same companion persona, just
+served by the realtime-2 model. Will be tuned separately later once
+we know which mini-specific guardrails realtime-2 can drop (it follows
+complex instructions more reliably, so the explicit anti-mini failure
+mode warnings should be unnecessary).
 
--2 has GPT-5-class reasoning and follows complex instructions more
-reliably than mini, so you can usually:
-  - cut bullet examples that exist purely as anti-mini guardrails
-  - use looser/more natural prompt language
-  - rely more on the system prompt's tone instructions instead of
-    re-stating them in opening_instructions
+Used when:
+  KAYO_PROMPT_VARIANT=companion (default)
+  OPENAI_REALTIME_MODEL starts with "gpt-realtime-2"
+
+For the alternative ChatGPT-style smart-assistant persona see
+prompts_smart.py (selected by KAYO_PROMPT_VARIANT=smart).
 """
 
 KAYO_SYSTEM_PROMPT_TEMPLATE = """\
@@ -161,6 +164,8 @@ KAYO_SYSTEM_PROMPT_TEMPLATE = """\
 
 
 # Override given to the FIRST response.create that plays the opening greeting.
+# Strict because mini tends to ad-lib extras ("たとえば〜", "何でも遠慮なく〜")
+# and to preface with meta-commentary ("はい、承知しました、今から読み上げますね").
 OPENING_INSTRUCTIONS_TEMPLATE = """\
 電話の最初の挨拶。下の本文をそのまま声に出すこと。付け足しも省略も一切しない。
 「はい、承知しました」「今から読み上げますね」など前置きは絶対に言わない。

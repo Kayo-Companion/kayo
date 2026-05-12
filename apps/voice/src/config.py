@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     openai_realtime_model: str = "gpt-realtime"
     openai_realtime_voice: str = "marin"
 
+    # Prompt variant — decouples the persona from the underlying model so
+    # you can A/B compare three configurations:
+    #   - "companion"     companion-style persona (default; used by both
+    #                     mini and realtime-2 today; realtime-2 to be tuned
+    #                     separately later)
+    #   - "smart"         ChatGPT-style smart-assistant persona — engages
+    #                     substantively with topics, doesn't feign ignorance.
+    #                     Designed to run on whichever model env you point at.
+    kayo_prompt_variant: str = "companion"
+
     # Twilio
     twilio_account_sid: str
     twilio_auth_token: str

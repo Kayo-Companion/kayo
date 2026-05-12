@@ -28,7 +28,12 @@ from websockets.asyncio.client import ClientConnection
 
 from .config import get_settings
 from .models import Senior
-from .prompts import build_kayo_prompt, build_opening_instructions, build_opening_script
+from .prompts import (
+    PROMPT_VARIANT_SMART,
+    build_kayo_prompt,
+    build_opening_instructions,
+    build_opening_script,
+)
 from .safety import detect_distress
 
 logger = logging.getLogger(__name__)
@@ -81,6 +86,24 @@ def _prices_for(model: str | None) -> dict[str, float]:
         if model.startswith(key):
             return prices
     return DEFAULT_PRICES
+
+
+def _session_caps_for_variant(variant: str) -> dict[str, int]:
+    """Per-variant session caps. The persona drives how much room the
+    model needs, not the underlying model size:
+
+      - companion: 1-2 sentence turns (~20s of speech). Anti-rambling
+        guardrail; this is what gives Kayo her "chatty grandma" rhythm.
+      - smart: 2-4 sentence turns (~60s ceiling) so she can actually
+        explain a topic without getting cut mid-thought.
+
+    Opening greeting always needs ~600-800 audio tokens (identification
+    + disclaimer + first question).
+    """
+    if variant == PROMPT_VARIANT_SMART:
+        return {"ongoing": 1200, "opening": 1000}
+    # companion (default)
+    return {"ongoing": 400, "opening": 800}
 
 
 def compute_cost_usd(usage: dict[str, int], model: str | None = None) -> float:
@@ -192,22 +215,30 @@ async def configure_session(
     """
     settings = get_settings()
     model = settings.openai_realtime_model
-    # System prompt + opening meta-instructions are model-specific (live in
-    # prompts_mini.py / prompts_realtime2.py). The audible opening script
-    # itself is shared business logic.
+    variant = (settings.kayo_prompt_variant or "companion").strip().lower()
+    if variant != PROMPT_VARIANT_SMART:
+        variant = "companion"
+    # System prompt + opening meta-instructions are variant- and model-aware
+    # (live in prompts_mini.py / prompts_realtime2.py / prompts_smart.py).
+    # The audible opening script itself is shared business logic.
     instructions = build_kayo_prompt(senior, past_summaries, model=model)
     full_script = build_opening_script(senior, past_summaries)
     opening_instructions = build_opening_instructions(full_script, model=model)
+    caps = _session_caps_for_variant(variant)
+    logger.info(
+        "Session config: model=%s variant=%s caps: ongoing=%d opening=%d",
+        model, variant, caps["ongoing"], caps["opening"],
+    )
 
     session_update = {
         "type": "session.update",
         "session": {
             "type": "realtime",
             "instructions": instructions,
-            # Cap for ongoing turns so Kayo doesn't ramble — ~20s of speech,
-            # roughly 1-2 sentences. Lower (e.g. 200) caused mid-sentence
-            # truncation. Greeting has its own larger override below.
-            "max_output_tokens": 400,
+            # Per-model output cap. Mini stays terse (companion persona —
+            # 1-2 sentence turns); realtime-2 gets room to actually answer
+            # substantive questions (ChatGPT-style smart-assistant persona).
+            "max_output_tokens": caps["ongoing"],
             "audio": {
                 "input": {
                     # Twilio Media Streams sends G.711 μ-law @ 8kHz.
@@ -250,14 +281,14 @@ async def configure_session(
     # Greeting: feed the structured instructions directly so the model
     # follows the script + tail rules and doesn't ad-lib. Override the
     # session cap because the opening (identification + disclaimer +
-    # question) needs ~600 audio tokens, more than the ongoing cap.
+    # question) needs ~600 audio tokens, more than the mini ongoing cap.
     await openai_ws.send(
         json.dumps(
             {
                 "type": "response.create",
                 "response": {
                     "instructions": opening_instructions,
-                    "max_output_tokens": 800,
+                    "max_output_tokens": caps["opening"],
                 },
             }
         )
@@ -532,6 +563,51 @@ class CallBridge:
                         and self._last_response_status == "completed"
                         and (now - self._last_response_done_at) < ECHO_GUARD_S
                     )
+                    # Explicit barge-in: if Kayo is currently mid-response
+                    # and the user said something SUBSTANTIVE (not a 相槌)
+                    # AND we're past the post-greeting grace + AI echo
+                    # window, cancel her response so she stops talking
+                    # immediately and we can reply to the user's real turn.
+                    #
+                    # semantic_vad's native interrupt_response=true is
+                    # supposed to do this for us, but on G.711 phone audio
+                    # speakerphone bleed masks the user's voice enough
+                    # that VAD doesn't always fire speech_started during
+                    # Kayo's output. The transcription event is more
+                    # reliable — it requires real decodable speech, so
+                    # echo gets filtered out at the transcriber stage.
+                    if (
+                        self._greeting_done
+                        and self._response_in_progress
+                        and not in_grace
+                        and not in_echo
+                        and not is_backchannel(text)
+                    ):
+                        try:
+                            await openai_ws.send(
+                                json.dumps({"type": "response.cancel"})
+                            )
+                            logger.info(
+                                "Barge-in: cancelling AI response (user said %r)", text
+                            )
+                        except Exception:
+                            logger.exception("Failed to send response.cancel on barge-in")
+                        # Also clear Twilio's audio buffer — otherwise the
+                        # last ~200-500ms of Kayo's audio that's already
+                        # been pushed to the phone keeps playing in the
+                        # earpiece even after OpenAI stops generating.
+                        if self.stream_sid:
+                            try:
+                                await self.twilio_ws.send_text(
+                                    json.dumps(
+                                        {
+                                            "event": "clear",
+                                            "streamSid": self.stream_sid,
+                                        }
+                                    )
+                                )
+                            except Exception:
+                                logger.exception("Failed to clear Twilio audio buffer")
                     # Interrupt-aware patience: if the user just cancelled
                     # Kayo's response, they're MID-INTERRUPTION. Their first
                     # transcribed fragment is probably not the whole thought.
