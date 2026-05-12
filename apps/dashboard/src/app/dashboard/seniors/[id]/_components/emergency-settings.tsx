@@ -148,14 +148,23 @@ export function EmergencySettings({
   return (
     <GlassCard className="space-y-5 p-6 md:p-8">
       <div>
-        <h2 className="font-serif text-xl font-medium text-warm-brown">
-          安否確認モード
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-serif text-xl font-medium text-warm-brown">
+            安否確認モード
+          </h2>
+          <span className="inline-flex items-center rounded-full bg-coral/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-coral">
+            ベータ版
+          </span>
+        </div>
         <p className="mt-1 text-sm text-warm-brown/70">
           {seniorName}さんに何かあった時に気づけるよう、ご家族へ自動でSMSをお送りします。
         </p>
         <p className="mt-1.5 text-xs text-warm-gray">
           送信先：{buyerPhone ? formatPhone(buyerPhone) : "（未設定）"}
+        </p>
+        <p className="mt-2 rounded-xl border border-rose-300/40 bg-rose-50/60 px-3 py-2 text-xs text-warm-brown/80">
+          現在ベータ版のため、SMS通知をご利用いただけるのは一部のユーザー様に限られます。
+          ご希望の方はサポートまでお問い合わせください。
         </p>
       </div>
 

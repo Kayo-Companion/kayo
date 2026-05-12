@@ -6,6 +6,7 @@ import { ResearchSection } from "@/components/sections/research-section";
 import { SafetySection } from "@/components/sections/safety-section";
 import { KayoPersonaSection } from "@/components/sections/kayo-persona-section";
 import { DashboardPreviewSection } from "@/components/sections/dashboard-preview-section";
+import { MultiUserBand } from "@/components/sections/multi-user-band";
 import { PricingSection } from "@/components/sections/pricing-section";
 import { FaqSection } from "@/components/sections/faq-section";
 import { FAQS } from "@/lib/faqs";
@@ -124,6 +125,7 @@ export default function HomePage() {
       </section>
       <KayoPersonaSection />
       <DashboardPreviewSection />
+      <MultiUserBand />
       <section id="pricing">
         <PricingSection />
       </section>
