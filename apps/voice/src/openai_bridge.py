@@ -293,7 +293,7 @@ async def configure_session(
                     "voice": settings.openai_realtime_voice,
                     # Slightly slower than default; tweaked to feel natural for
                     # senior listeners without sounding sluggish.
-                    "speed": 0.95,
+                    "speed": 0.92,
                 },
             },
         },
@@ -548,7 +548,7 @@ class CallBridge:
                                             "output": {
                                                 "format": {"type": "audio/pcmu"},
                                                 "voice": s.openai_realtime_voice,
-                                                "speed": 0.95,
+                                                "speed": 0.92,
                                             },
                                         },
                                     },
