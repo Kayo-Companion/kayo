@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request, WebSocket
@@ -309,6 +310,44 @@ async def twilio_call_status(
     return Response(status_code=204)
 
 
+@router.post("/twilio/amd-result")
+async def twilio_amd_result(
+    CallSid: str = Form(...),  # noqa: N803
+    AnsweredBy: str | None = Form(None),  # noqa: N803
+) -> Response:
+    """Async AMD verdict from Twilio.
+
+    With `async_amd=true`, the voice webhook fires immediately on pickup
+    (no AMD wait) and Twilio posts the AMD verdict here separately ~2-4s
+    later. If it says machine/voicemail, we hang up the active call by
+    SID so Kayo doesn't keep talking into a voicemail box.
+
+    By the time this fires, Kayo has likely already said the first few
+    seconds of her greeting. That fragment ends up recorded on the
+    voicemail — a minor cost we trade for ~3-4s faster perceived
+    latency on every scheduled call.
+    """
+    answered_by = (AnsweredBy or "").lower().strip()
+    logger.info("Async AMD result: sid=%s answered_by=%s", CallSid, answered_by or "(none)")
+
+    if answered_by not in _MACHINE_ANSWERED_BY:
+        return Response(status_code=204)
+
+    # Voicemail detected — terminate the call. Twilio's REST client is
+    # synchronous so this briefly blocks; the call is short and we don't
+    # care if it races with normal hangup.
+    try:
+        _twilio_client().calls(CallSid).update(status="completed")
+        logger.info("Async AMD: hung up call %s (machine pickup)", CallSid)
+    except TwilioRestException:
+        # Likely already ended (status_callback fired first) — fine.
+        logger.info("Async AMD: call %s already ended, nothing to hang up", CallSid)
+    except Exception:
+        logger.exception("Async AMD: failed to hang up call %s", CallSid)
+
+    return Response(status_code=204)
+
+
 def _twiml_response(body: str) -> Response:
     return Response(content=body, media_type="application/xml")
 
@@ -339,11 +378,26 @@ async def place_outbound_call(
     to_number: str,
     *,
     enforce_quota: bool = True,
+    manual: bool = False,
 ) -> str:
     """Place a call from Kayo's number to a senior. Returns Twilio CallSid.
 
     enforce_quota=False bypasses the minutes_used < minutes_limit check —
     used by the dev /admin/test-call-now endpoint.
+
+    manual=True means a human just pressed "今すぐ電話" — the senior is
+    expected to be at the phone right now. In that case we skip Answering
+    Machine Detection entirely so Kayo can start speaking ~3-4s earlier.
+    The voicemail-recording risk is tiny because someone literally just
+    initiated this call from the dashboard.
+
+    manual=False (scheduled calls) uses **async AMD** — Twilio fires the
+    voice webhook immediately on pickup and runs AMD in parallel,
+    posting the verdict to `/twilio/amd-result`. If it comes back as
+    machine/voicemail we forcibly terminate the call. This shaves the
+    same ~3-4s off scheduled calls at the cost of occasionally recording
+    a few seconds of Kayo's greeting into voicemail — which our missed-
+    call detection already cleans up downstream.
     """
     settings = get_settings()
     db = get_db()
@@ -362,28 +416,47 @@ async def place_outbound_call(
     # to fire the no-answer emergency SMS (if the senior has it enabled).
     status_callback_url = f"{settings.voice_api_url}/twilio/call-status?{qs}"
 
+    # Common kwargs across both call paths.
+    call_kwargs: dict[str, Any] = {
+        "to": to_number,
+        "from_": settings.twilio_phone_number,
+        "url": twiml_url,
+        "timeout": 30,
+        "status_callback": status_callback_url,
+        "status_callback_method": "POST",
+        "status_callback_event": ["completed"],
+    }
+
+    if manual:
+        # No AMD — fastest possible path to first audio. Kayo starts
+        # speaking ~3-4s sooner. Risk: voicemail will record her
+        # greeting if the user isn't actually there. Acceptable for
+        # button-initiated calls.
+        logger.info("Manual call to senior %s — AMD disabled for speed", senior_id)
+    else:
+        # Async AMD: webhook fires immediately on pickup; AMD verdict
+        # arrives separately at /twilio/amd-result, where we hang up if
+        # it says machine.
+        amd_callback_url = f"{settings.voice_api_url}/twilio/amd-result?{qs}"
+        call_kwargs.update({
+            "machine_detection": "DetectMessageEnd",
+            "machine_detection_speech_threshold": 2400,  # ms; default 2400
+            "machine_detection_silence_timeout": 5000,   # ms before assuming human
+            "async_amd": "true",
+            "async_amd_status_callback": amd_callback_url,
+            "async_amd_status_callback_method": "POST",
+        })
+
     try:
-        call = client.calls.create(
-            to=to_number,
-            from_=settings.twilio_phone_number,
-            url=twiml_url,
-            timeout=30,
-            status_callback=status_callback_url,
-            status_callback_method="POST",
-            status_callback_event=["completed"],
-            # DetectMessageEnd waits through pre-recorded announcements
-            # (Japanese carrier scam warnings, voicemail greetings, etc.)
-            # so our webhook fires only when the line is clear and the
-            # human has actually picked up.
-            machine_detection="DetectMessageEnd",
-            machine_detection_speech_threshold=2400,  # ms; default 2400
-            machine_detection_silence_timeout=5000,   # ms before assuming human
-        )
+        call = client.calls.create(**call_kwargs)
     except TwilioRestException as exc:
         logger.error("Twilio outbound failed for senior %s: %s", senior_id, exc)
         raise HTTPException(status_code=502, detail="twilio_call_failed") from exc
 
-    logger.info("Outbound call placed: senior=%s sid=%s", senior_id, call.sid)
+    logger.info(
+        "Outbound call placed: senior=%s sid=%s mode=%s",
+        senior_id, call.sid, "manual-no-amd" if manual else "scheduled-async-amd",
+    )
     return call.sid
 
 

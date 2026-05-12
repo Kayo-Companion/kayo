@@ -85,7 +85,11 @@ async def test_call(payload: TestCallRequest) -> dict[str, str]:
     db = get_db()
     if await db.get_senior(payload.senior_id) is None:
         raise HTTPException(status_code=404, detail="senior not found")
-    sid = await place_outbound_call(senior_id=payload.senior_id, to_number=payload.to_number)
+    sid = await place_outbound_call(
+        senior_id=payload.senior_id,
+        to_number=payload.to_number,
+        manual=True,
+    )
     return {"call_sid": sid}
 
 
@@ -128,7 +132,11 @@ async def calls_start(
     if not senior.is_active:
         raise HTTPException(status_code=409, detail="senior_inactive")
 
-    sid = await place_outbound_call(senior_id=senior.id, to_number=senior.phone)
+    # Dashboard "今すぐ電話" button — user is at the phone right now,
+    # so we skip AMD for the fastest path to first audio.
+    sid = await place_outbound_call(
+        senior_id=senior.id, to_number=senior.phone, manual=True
+    )
     return {"call_sid": sid}
 
 
@@ -159,7 +167,11 @@ async def test_call_now(payload: QuickTestCallRequest) -> dict[str, str]:
     db.upsert_senior(senior)
 
     # Quota-bypass: dev test endpoint shouldn't be gated by minute limits.
+    # Treated as manual (no AMD) for speed.
     sid = await place_outbound_call(
-        senior_id=senior.id, to_number=payload.to_number, enforce_quota=False
+        senior_id=senior.id,
+        to_number=payload.to_number,
+        enforce_quota=False,
+        manual=True,
     )
     return {"call_sid": sid, "senior_id": senior.id}

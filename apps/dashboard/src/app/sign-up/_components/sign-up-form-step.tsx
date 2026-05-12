@@ -440,6 +440,7 @@ function ScheduleStep({
               type="time"
               value={row.time}
               onChange={(e) => updateRow(i, { time: e.target.value })}
+              step={300}
               className="rounded-xl border border-rose-300/50 bg-white/90 px-3 py-2.5 text-warm-brown focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20"
             />
             <button

@@ -277,6 +277,7 @@ export function EmergencySettings({
               value={dailyDeadline}
               onChange={(e) => persistDaily(e.target.value)}
               disabled={savingDaily}
+              step={300}
               className="rounded-xl border border-rose-300/50 bg-white/90 px-3 py-2 text-warm-brown focus:border-coral focus:outline-none focus:ring-2 focus:ring-coral/20 disabled:opacity-50"
             />
           </div>
