@@ -210,8 +210,16 @@ async def twilio_stream(websocket: WebSocket, senior_id: str) -> None:
                 transcript=transcript,
                 agent_name=senior.agent_name or "カヨ",
             )
-            if summary.distress_detected or bridge.distress_detected:
+            # Distress notification — gated on (a) GPT post-call decision
+            # and (b) the per-senior emergency_on_distress toggle.
+            # Live regex-based detection has been removed from the bridge.
+            if summary.distress_detected and senior.emergency_on_distress:
                 await notify_distress(senior=senior, call_id=call.id, summary=summary.summary)
+            elif summary.distress_detected:
+                logger.info(
+                    "Distress flagged on call %s but emergency_on_distress=False — not notifying",
+                    call.id,
+                )
         except Exception:
             logger.exception("Failed to summarize/notify for call %s", call.id)
 

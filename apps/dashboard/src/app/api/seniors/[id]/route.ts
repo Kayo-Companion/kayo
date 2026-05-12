@@ -25,6 +25,7 @@ interface PatchBody {
   emergency_contact_phone?: unknown;
   agent_name?: unknown;
   daily_check_deadline?: unknown;
+  emergency_on_distress?: unknown;
 }
 
 /**
@@ -69,6 +70,16 @@ export async function PATCH(
       );
     }
     update.emergency_on_no_answer = body.emergency_on_no_answer;
+  }
+
+  if (body.emergency_on_distress !== undefined) {
+    if (typeof body.emergency_on_distress !== "boolean") {
+      return NextResponse.json(
+        { error: "invalid_emergency_on_distress" },
+        { status: 400 }
+      );
+    }
+    update.emergency_on_distress = body.emergency_on_distress;
   }
 
   if (body.agent_name !== undefined) {
@@ -164,6 +175,7 @@ export async function PATCH(
       "emergency_contact_phone",
       "agent_name",
       "daily_check_deadline",
+      "emergency_on_distress",
     ];
     if (newish.some((k) => k in update)) {
       const fallback = { ...update };

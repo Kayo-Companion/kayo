@@ -1,4 +1,4 @@
-"""Family-facing notifications. SMS via Twilio (when family.phone is known)."""
+"""Family-facing notifications. SMS via Twilio."""
 
 from __future__ import annotations
 
@@ -12,25 +12,49 @@ logger = logging.getLogger(__name__)
 
 
 async def notify_distress(senior: Senior, call_id: str, summary: str) -> None:
-    """Record a distress alert in the DB. SMS dispatch is best-effort.
+    """Record a distress alert in the DB and SMS the emergency contact.
 
-    The emergency_contact_phone column was removed; for now we just log the
-    alert and rely on the family seeing it in the dashboard. Once we wire up
-    the family.phone column we can resume SMS dispatch.
+    Caller is responsible for gating on senior.emergency_on_distress — this
+    function unconditionally sends if called (the toggle check lives at the
+    call site so the alert row is also gated, not just the SMS).
     """
 
     settings = get_settings()
     db = get_db()
-    message = (
-        f"【カヨ】{senior.name}様の通話で気になる発言がありました。\n"
-        f"詳細: {settings.dashboard_url}/seniors/{senior.id}"
-    )
 
-    await db.create_alert(
-        senior_id=senior.id,
-        call_id=call_id,
-        type_=AlertType.DISTRESS.value,
-        severity=AlertSeverity.HIGH.value,
-        message=summary,
+    # Always record the alert row so the dashboard can show history even
+    # if SMS dispatch fails (or the senior has no emergency_contact_phone).
+    try:
+        await db.create_alert(
+            senior_id=senior.id,
+            call_id=call_id,
+            type_=AlertType.DISTRESS.value,
+            severity=AlertSeverity.HIGH.value,
+            message=summary,
+        )
+    except Exception:
+        logger.exception("Failed to record distress alert for senior %s", senior.id)
+
+    if not senior.emergency_contact_phone:
+        logger.warning(
+            "Distress flagged for senior %s but no emergency_contact_phone set — skipping SMS",
+            senior.id,
+        )
+        return
+
+    body = (
+        f"【カヨ】{senior.name}さんとの通話で気になる発言がありました。"
+        f"ご様子をご確認ください。"
     )
-    logger.warning("Distress alert recorded for senior %s — %s", senior.id, message)
+    # Local import to avoid the twilio_handler ↔ notifications circular
+    # import that would happen if we imported at module load.
+    from .twilio_handler import send_sms
+
+    try:
+        await send_sms(to=senior.emergency_contact_phone, body=body)
+        logger.warning(
+            "Distress SMS sent to %s for senior %s",
+            senior.emergency_contact_phone, senior.id,
+        )
+    except Exception:
+        logger.exception("Failed to send distress SMS for senior %s", senior.id)

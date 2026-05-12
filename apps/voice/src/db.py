@@ -98,6 +98,7 @@ class SupabaseDB:
             emergency_contact_phone=row.get("emergency_contact_phone"),
             emergency_on_no_answer=row.get("emergency_on_no_answer", False),
             daily_check_deadline=row.get("daily_check_deadline"),
+            emergency_on_distress=row.get("emergency_on_distress", False),
         )
 
     async def get_senior(self, senior_id: str) -> Senior | None:

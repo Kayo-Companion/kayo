@@ -6,15 +6,17 @@ import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/glass-card";
 
 /**
- * 安否確認モード — two independent SMS triggers:
+ * 安否確認モード — three independent SMS triggers:
  *
  *   (1) No-pickup: Kayo's scheduled call goes unanswered → SMS the buyer
  *   (2) Daily check: no call in EITHER direction by the chosen JST time →
  *       SMS the buyer
+ *   (3) Distress: post-call GPT summary flags a worrying utterance from
+ *       the senior → SMS the buyer
  *
  * Destination is the buyer's login phone (passed in), so no separate
- * phone-entry field. Both triggers can be enabled/disabled independently.
- * Both are simple toggles that auto-save. (2) also exposes a time picker
+ * phone-entry field. All triggers can be enabled/disabled independently.
+ * All are simple toggles that auto-save. (2) also exposes a time picker
  * (visible while enabled) which auto-saves on change.
  */
 
@@ -24,12 +26,14 @@ export function EmergencySettings({
   seniorName,
   initialOnNoAnswer,
   initialDailyDeadline,
+  initialOnDistress,
   buyerPhone,
 }: {
   seniorId: string;
   seniorName: string;
   initialOnNoAnswer: boolean;
   initialDailyDeadline: string | null;
+  initialOnDistress: boolean;
   buyerPhone: string | null;
 }) {
   const router = useRouter();
@@ -42,6 +46,10 @@ export function EmergencySettings({
   const [dailyDeadline, setDailyDeadline] = useState(initialDailyDeadline ?? "");
   const [savingDaily, setSavingDaily] = useState(false);
   const dailyEnabled = dailyDeadline.trim() !== "";
+
+  // (3) Distress notification — auto-saves on flip.
+  const [onDistress, setOnDistress] = useState(initialOnDistress);
+  const [togglingDistress, setTogglingDistress] = useState(false);
 
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +153,43 @@ export function EmergencySettings({
     }
   };
 
+  const toggleDistress = async () => {
+    if (togglingDistress) return;
+    if (!buyerPhone) {
+      setError("ログイン用の電話番号が見つかりません。");
+      return;
+    }
+    const next = !onDistress;
+    setOnDistress(next);
+    setTogglingDistress(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/seniors/${seniorId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emergency_on_distress: next,
+          // Stamp the buyer phone as the SMS destination when enabling
+          // for the first time. Server preserves the existing value when
+          // this field is omitted.
+          ...(next && buyerPhone ? { emergency_contact_phone: buyerPhone } : {}),
+        }),
+      });
+      if (!res.ok) {
+        setOnDistress(!next);
+        setError("保存に失敗しました。");
+      } else {
+        flashSaved("distress");
+        router.refresh();
+      }
+    } catch {
+      setOnDistress(!next);
+      setError("通信エラーが発生しました。");
+    } finally {
+      setTogglingDistress(false);
+    }
+  };
+
   return (
     <GlassCard className="space-y-5 p-6 md:p-8">
       <div>
@@ -236,6 +281,35 @@ export function EmergencySettings({
             />
           </div>
         )}
+      </div>
+
+      {/* (3) Distress notification toggle */}
+      <div className="flex items-start justify-between gap-4 rounded-2xl border border-rose-300/40 bg-white/60 p-4">
+        <div className="flex-1 space-y-1">
+          <div className="text-sm font-medium text-warm-brown">
+            気になる発言があった時に通知
+          </div>
+          <p className="text-xs text-warm-gray">
+            {seniorName}さんの通話の中で、体調や安全について気になる発言があったと
+            AIが判断した場合にSMSをお送りします。
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={onDistress}
+          onClick={toggleDistress}
+          disabled={togglingDistress || !buyerPhone}
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            onDistress ? "bg-coral" : "bg-rose-200"
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+              onDistress ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
       </div>
 
       {savedFlash && (

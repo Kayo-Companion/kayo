@@ -19,6 +19,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -34,7 +35,9 @@ from .prompts import (
     build_opening_instructions,
     build_opening_script,
 )
-from .safety import detect_distress
+# Note: live regex distress detection was removed — see the comment in the
+# transcription handler below. Distress is now decided post-call by the
+# GPT summarizer (memory.summarize_call) for fewer false positives.
 
 logger = logging.getLogger(__name__)
 
@@ -142,13 +145,32 @@ BACKCHANNEL_PATTERNS = {
 }
 
 
+# Splits on whitespace, commas, and the JP fullwidth comma so we can break
+# multi-token backchannel utterances into pieces (e.g. "はい、はい、はい").
+_BACKCHANNEL_SPLIT_RE = re.compile(r"[、,\s　]+")
+
+
 def is_backchannel(text: str) -> bool:
-    """True if `text` is a no-content acknowledgment we should not respond to."""
+    """True if `text` is a no-content acknowledgment we should not respond to.
+
+    Handles three cases:
+      1. Empty or whitespace-only.
+      2. A single backchannel token possibly with trailing punctuation.
+      3. Multiple backchannel tokens stuck together with commas/spaces,
+         like "はい、はい" or "うん うん" — treats the whole utterance
+         as a backchannel as long as every token is in the set.
+    """
     if not text:
         return True
     # Strip whitespace + common punctuation/quote endings
     t = text.strip().rstrip("。、！？!?.…」』 　").strip()
-    return (not t) or (t in BACKCHANNEL_PATTERNS)
+    if not t:
+        return True
+    if t in BACKCHANNEL_PATTERNS:
+        return True
+    # Multi-token case: every piece must be a backchannel.
+    tokens = [tok.strip() for tok in _BACKCHANNEL_SPLIT_RE.split(t) if tok.strip()]
+    return bool(tokens) and all(tok in BACKCHANNEL_PATTERNS for tok in tokens)
 
 
 def extract_usage(response_obj: dict[str, Any]) -> dict[str, int]:
@@ -325,6 +347,13 @@ class CallBridge:
         # Used to avoid firing duplicate `response.create` calls that race
         # semantic_vad's auto-create (when it does fire).
         self._response_in_progress = False
+        # Timestamp of the most recent audio chunk we forwarded to Twilio.
+        # Used to estimate whether audio is still playing in the user's
+        # earpiece even after the server-side response.done has fired —
+        # OpenAI streams ~20s of audio over a few seconds, so server-done
+        # ≠ playback-done, and the user's barge-in needs Twilio clear
+        # for that whole playback window.
+        self._last_audio_sent_at: float | None = None
         # status + timestamp of the most recent response.done event. Used to:
         # - skip transcripts that arrive in the brief echo window after AI
         #   finishes speaking (mic picks up Kayo's own audio as "user")
@@ -447,6 +476,7 @@ class CallBridge:
                         audio_chunks_sent += 1
                         if audio_chunks_sent == 1:
                             logger.info("First audio chunk forwarded to Twilio")
+                        self._last_audio_sent_at = asyncio.get_event_loop().time()
                         await self.twilio_ws.send_text(
                             json.dumps(
                                 {
@@ -494,8 +524,20 @@ class CallBridge:
                                                     # conversational feel — without becoming
                                                     # aggressive enough to chop user speech.
                                                     "eagerness": "medium",
-                                                    # User can interrupt Kayo by speaking.
-                                                    "interrupt_response": True,
+                                                    # IMPORTANT: server-side interrupt is OFF.
+                                                    # If true, the server cancels Kayo's
+                                                    # response on ANY detected user audio —
+                                                    # including 相槌 ("はい", "うん") and
+                                                    # speakerphone bleed of Kayo's own voice.
+                                                    # That made her output fragmented:
+                                                    # "私はAIです。かよさん、" → cut by "はい"
+                                                    # → "お話できれば" → cut again.
+                                                    # We do barge-in MANUALLY in the
+                                                    # transcription handler instead, only
+                                                    # firing response.cancel when the
+                                                    # transcribed turn is substantive
+                                                    # (non-backchannel).
+                                                    "interrupt_response": False,
                                                     # IMPORTANT: bridge owns response.create.
                                                     # Letting semantic_vad auto-fire while we
                                                     # also fired created racing duplicates and
@@ -513,20 +555,21 @@ class CallBridge:
                                 }
                             )
                         )
-                        logger.info("Greeting done — interrupt_response=True for the rest of the call")
+                        logger.info(
+                            "Greeting done — server interrupt OFF (bridge handles barge-in via transcription)"
+                        )
 
                 elif etype == "conversation.item.input_audio_transcription.completed":
                     text = msg.get("transcript", "")
                     if text:
                         logger.info("User said: %s", text)
                         self.transcript.append({"role": "user", "text": text})
-                        matched, reason = detect_distress(text)
-                        if matched and not self.distress_detected:
-                            self.distress_detected = True
-                            self.distress_reason = reason
-                            logger.warning(
-                                "Distress detected on call: %s — %s", self.stream_sid, reason
-                            )
+                    # Note: live regex-based distress detection has been
+                    # removed (was: safety.detect_distress here). Distress
+                    # is now decided by the post-call GPT summarizer, which
+                    # judges from the full conversation context and avoids
+                    # false positives on casual usage of "苦しい" / "辛い"
+                    # in everyday talk. See twilio_handler.py finalize.
                     # Bridge owns response timing (create_response: false on
                     # the session post-greeting). Fire response.create after a
                     # short patience pause — and only if all of these hold:
@@ -563,39 +606,56 @@ class CallBridge:
                         and self._last_response_status == "completed"
                         and (now - self._last_response_done_at) < ECHO_GUARD_S
                     )
-                    # Explicit barge-in: if Kayo is currently mid-response
-                    # and the user said something SUBSTANTIVE (not a 相槌)
-                    # AND we're past the post-greeting grace + AI echo
-                    # window, cancel her response so she stops talking
-                    # immediately and we can reply to the user's real turn.
+                    # Explicit barge-in. Two flavors:
                     #
-                    # semantic_vad's native interrupt_response=true is
-                    # supposed to do this for us, but on G.711 phone audio
-                    # speakerphone bleed masks the user's voice enough
-                    # that VAD doesn't always fire speech_started during
-                    # Kayo's output. The transcription event is more
-                    # reliable — it requires real decodable speech, so
-                    # echo gets filtered out at the transcriber stage.
-                    if (
+                    #  (A) Server-side response still being generated
+                    #      (_response_in_progress=True):
+                    #         → send response.cancel to OpenAI
+                    #         → send clear to Twilio (drop buffered audio)
+                    #
+                    #  (B) Server-side response.done already fired, but
+                    #      audio is still playing in the user's earpiece
+                    #      because Twilio buffers ~20s of streamed audio:
+                    #         → can't response.cancel (nothing active)
+                    #         → still send clear to Twilio so the playback
+                    #           stops immediately. Otherwise old audio
+                    #           overlaps with the new response we're about
+                    #           to generate, which feels like Kayo "talks
+                    #           over" the user.
+                    #
+                    # Both gated on the same conditions: greeting done,
+                    # past grace, not in echo window, not a 相槌.
+                    AUDIO_PLAYBACK_TAIL_S = 3.0
+                    audio_still_playing = (
+                        self._last_audio_sent_at is not None
+                        and (now - self._last_audio_sent_at) < AUDIO_PLAYBACK_TAIL_S
+                    )
+                    should_barge_in = (
                         self._greeting_done
-                        and self._response_in_progress
+                        and (self._response_in_progress or audio_still_playing)
                         and not in_grace
                         and not in_echo
                         and not is_backchannel(text)
-                    ):
-                        try:
-                            await openai_ws.send(
-                                json.dumps({"type": "response.cancel"})
-                            )
+                    )
+                    if should_barge_in:
+                        if self._response_in_progress:
+                            try:
+                                await openai_ws.send(
+                                    json.dumps({"type": "response.cancel"})
+                                )
+                                logger.info(
+                                    "Barge-in (active): cancelling AI response (user said %r)",
+                                    text,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Failed to send response.cancel on barge-in"
+                                )
+                        else:
                             logger.info(
-                                "Barge-in: cancelling AI response (user said %r)", text
+                                "Barge-in (playback): clearing Twilio buffer (user said %r)",
+                                text,
                             )
-                        except Exception:
-                            logger.exception("Failed to send response.cancel on barge-in")
-                        # Also clear Twilio's audio buffer — otherwise the
-                        # last ~200-500ms of Kayo's audio that's already
-                        # been pushed to the phone keeps playing in the
-                        # earpiece even after OpenAI stops generating.
                         if self.stream_sid:
                             try:
                                 await self.twilio_ws.send_text(
