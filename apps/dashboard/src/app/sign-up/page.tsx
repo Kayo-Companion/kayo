@@ -34,6 +34,11 @@ export interface SignUpData {
   buyerPhoneVerified: boolean;
   // Optional custom AI-agent name. Empty = use the product default ("カヨ").
   agentName?: string;
+  // Consents captured on the confirmation step before checkout. terms is
+  // required (the button is gated on it); research is an opt-in checkbox
+  // shown next to it.
+  termsAccepted?: boolean;
+  researchConsent?: boolean;
 }
 
 function isPlan(p: string | null): p is Plan {

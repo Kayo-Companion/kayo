@@ -45,7 +45,7 @@ export function HeroSection() {
             <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/60 bg-white/70 px-4 py-1.5 backdrop-blur-md">
               <Heart className="h-3.5 w-3.5 fill-coral text-coral" />
               <span className="text-xs font-semibold tracking-wide text-warm-brown">
-                心と頭の元気をつくるAIコンパニオン
+                認知症対策に特化したAIサービス
               </span>
               <Star className="h-3.5 w-3.5 fill-warm-orange text-warm-orange" />
             </div>
@@ -56,20 +56,23 @@ export function HeroSection() {
             className="animate-fade-in delay-200 font-serif text-[2.75rem] font-medium leading-[1.15] tracking-tight text-warm-brown sm:text-6xl lg:text-[5rem] lg:leading-[1.05]"
             style={{ fontFeatureSettings: '"palt"', wordBreak: "keep-all" }}
           >
-            <span className="block">大切な人に、</span>
             <span className="block">
+              ご両親の
               <span className="bg-gradient-to-br from-coral via-rose-400 to-warm-orange bg-clip-text text-transparent">
-                話す習慣
+                脳の健康
               </span>
-              を。
+              、
             </span>
+            <span className="block">今のうちから。</span>
           </h1>
 
           {/* Description */}
-          <p className="animate-fade-in delay-300 max-w-xl text-base leading-relaxed text-warm-brown/80 md:text-lg">
-            会話が減ると、頭も心も鈍りがち。
+          <p className="animate-fade-in delay-300 max-w-2xl text-base leading-relaxed text-warm-brown/80 md:text-lg">
+            ご両親の認知機能の維持を、毎日の習慣に。
             <br />
-            話したいときに、いつでもカヨと。
+            楽しいことば遊びと会話の中に、認知症対策を自然に組み込みました。
+            <br />
+            変化があれば、ご家族が一番早く気づけるように。
           </p>
 
           {/* CTA */}

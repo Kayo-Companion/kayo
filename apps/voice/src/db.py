@@ -43,6 +43,10 @@ class DB(Protocol):
         openai_cost_usd: float | None = None,
     ) -> None: ...
     async def update_call_summary(self, call_id: str, summary: CallSummary) -> None: ...
+    async def save_observations(
+        self, call_id: str, observations: list[dict[str, Any]]
+    ) -> None: ...
+    async def save_recording_url(self, call_id: str, url: str) -> None: ...
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]: ...
     async def append_long_term_facts(
         self, senior_id: str, new_facts: list[str]
@@ -182,6 +186,40 @@ class SupabaseDB:
                 "distress_reason": summary.distress_reason,
             }
         ).eq("id", call_id).execute()
+
+    async def save_observations(
+        self, call_id: str, observations: list[dict[str, Any]]
+    ) -> None:
+        """Store structured observations for the dashboard's 気になる変化 card.
+
+        Silently no-ops if the `observations` column isn't migrated yet, so
+        older deployments keep working until the migration runs.
+        """
+        try:
+            await self._client.table("calls").update(
+                {"observations": observations}
+            ).eq("id", call_id).execute()
+        except Exception as exc:
+            if "observations" in str(exc):
+                logger.warning(
+                    "observations column missing; skipping (run migration 008)"
+                )
+                return
+            raise
+
+    async def save_recording_url(self, call_id: str, url: str) -> None:
+        """Persist the Twilio (or mirrored) recording URL on the call row."""
+        try:
+            await self._client.table("calls").update(
+                {"audio_recording_url": url}
+            ).eq("id", call_id).execute()
+        except Exception as exc:
+            if "audio_recording_url" in str(exc):
+                logger.warning(
+                    "audio_recording_url column missing; skipping (run migration 008)"
+                )
+                return
+            raise
 
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]:
         # Fetch a wider window than `limit` so we still return `limit` real
@@ -383,6 +421,16 @@ class InMemoryDB:
         call.topics_discussed = summary.topics
         call.mood = summary.mood
         self._summaries.setdefault(call.senior_id, []).append(summary.summary)
+
+    async def save_observations(
+        self, call_id: str, observations: list[dict[str, Any]]
+    ) -> None:
+        # In-memory fallback for local dev — discard. Real persistence
+        # happens in SupabaseDB.
+        return
+
+    async def save_recording_url(self, call_id: str, url: str) -> None:
+        return
 
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]:
         all_rev = list(reversed(self._summaries.get(senior_id, [])))

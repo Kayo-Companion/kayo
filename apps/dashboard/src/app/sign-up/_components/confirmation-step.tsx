@@ -52,13 +52,16 @@ type CheckoutState =
 
 export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
   const [checkout, setCheckout] = useState<CheckoutState>({ kind: "review" });
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [researchConsent, setResearchConsent] = useState(false);
 
   const handleStartCheckout = async () => {
+    if (!termsAccepted) return;
     setCheckout({ kind: "loading" });
     const response = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, termsAccepted, researchConsent }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -193,12 +196,59 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
         </p>
       </div>
 
+      <div className="space-y-3 rounded-2xl border border-rose-300/40 bg-white/60 p-5">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={termsAccepted}
+            onChange={(e) => setTermsAccepted(e.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-coral"
+          />
+          <span className="text-sm leading-relaxed text-warm-brown/85">
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-coral hover:underline"
+            >
+              利用規約
+            </a>
+            と
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-coral hover:underline"
+            >
+              プライバシーポリシー
+            </a>
+            に同意します。
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={researchConsent}
+            onChange={(e) => setResearchConsent(e.target.checked)}
+            className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-coral"
+          />
+          <span className="text-sm leading-relaxed text-warm-brown/85">
+            匿名化したデータを、認知症ケアの研究のために
+            ご活用いただくことに同意します。
+            <span className="ml-1 text-xs text-warm-gray">
+              （いつでも撤回できます）
+            </span>
+          </span>
+        </label>
+      </div>
+
       <Button
         variant="primary"
         size="lg"
         className="w-full"
         onClick={handleStartCheckout}
-        disabled={checkout.kind === "loading"}
+        disabled={checkout.kind === "loading" || !termsAccepted}
       >
         {checkout.kind === "loading" ? (
           <>
@@ -212,6 +262,11 @@ export function ConfirmationStep({ data, onChangePlan, onEdit }: Props) {
           </>
         )}
       </Button>
+      {!termsAccepted && (
+        <p className="text-center text-xs text-warm-gray">
+          利用規約への同意が必要です。
+        </p>
+      )}
       {checkout.kind === "error" && (
         <p className="text-center text-sm text-coral">{checkout.message}</p>
       )}

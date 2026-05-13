@@ -130,18 +130,26 @@ def compute_cost_usd(usage: dict[str, int], model: str | None = None) -> float:
 # out at the server, but it's unreliable on phone audio, so we belt-and-
 # suspenders it here.
 BACKCHANNEL_PATTERNS = {
-    "うん", "うんうん", "うーん", "んー", "んん",
+    "うん", "うんうん", "うーん", "んー", "んん", "うんと", "うーんと",
     "はい", "はいはい",
-    "ええ",
+    "ええ", "えー", "えーー", "えーえー",  # え* hesitations
     "そう", "そうそう", "そっか", "そうですね", "そうね", "そうだね",
+    "そうよね", "そうかも", "そうかな", "そうですか",
     "へぇ", "へえ", "へー",
-    "あぁ", "ああ", "あー",
+    "あぁ", "ああ", "あー", "あーあ",
     "あら", "あらー",
     "なるほど",
     "ふむ", "ふん",
     "おー", "おお",
     "まあ", "まぁ",
     "ふーん",
+    # Hesitation / vague non-answers — treat as backchannel so we don't
+    # bombard the senior with more content when they're stalling.
+    "どうだろう", "どうかな", "どうかしら", "なんだろう",
+    "わからない", "わかんない", "わかんなーい",
+    "ちょっと", "ちょっとね",
+    "なんか", "なんかね",
+    "えーっと", "えっと", "えっとね", "あのー", "あの",
 }
 
 
@@ -671,14 +679,21 @@ class CallBridge:
                     # Interrupt-aware patience: if the user just cancelled
                     # Kayo's response, they're MID-INTERRUPTION. Their first
                     # transcribed fragment is probably not the whole thought.
-                    # Wait longer (1s) to give them time to finish — newer
+                    # Wait longer to give them time to finish — newer
                     # transcripts will cancel + reschedule this pending fire.
                     is_post_interrupt = (
                         self._last_response_status == "cancelled"
                         and self._last_response_done_at is not None
                         and (now - self._last_response_done_at) < 3.0
                     )
-                    patience_s = 1.0 if is_post_interrupt else 0.0
+                    # Default patience for normal turns: 0.6s so that
+                    # trailing hesitations like "そうだね…えー" don't get
+                    # split into two committed turns where the second
+                    # triggers a barge-in. If user keeps talking within
+                    # that window, the new transcription cancels the
+                    # pending response and reschedules with combined
+                    # context. 0.6s is short enough to not feel sluggish.
+                    patience_s = 1.0 if is_post_interrupt else 0.6
 
                     if not self._greeting_done:
                         pass

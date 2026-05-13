@@ -13,9 +13,45 @@ interface UseCase {
 
 const USE_CASES: UseCase[] = [
   {
+    icon: Brain,
+    title: "認知症対策・脳の体操",
+    body: "しりとり、なぞなぞ、思い出話。楽しい会話の中に、認知機能の維持につながる脳の体操を自然に組み込みます。",
+    examples: [
+      "ことば遊び・回想法・連想ゲーム",
+      "ご本人のペースで毎日続けられる",
+      "米国NIH・I-CONECT研究でも会話介入の効果が示唆",
+    ],
+    gradient: "from-violet-300 to-violet-500",
+    shadow: "shadow-violet-300/50",
+  },
+  {
+    icon: ShieldCheck,
+    title: "ご家族の早期の気づき",
+    body: "毎日の会話の様子をご家族のダッシュボードで確認。気になる変化があれば、いち早く気づけるようサポートします。",
+    examples: [
+      "会話の活発さ・言葉の豊かさを記録",
+      "応答なし／気になる発言を自動通知",
+      "もしもの時に医療機関への相談につなぐ",
+    ],
+    gradient: "from-emerald-300 to-emerald-500",
+    shadow: "shadow-emerald-300/50",
+  },
+  {
+    icon: MessageCircle,
+    title: "毎日の楽しい習慣に",
+    body: "季節の話、思い出話、孫の話。ご本人が楽しめる時間だからこそ、無理なく毎日続く健康習慣になります。",
+    examples: [
+      "ご本人のペースに合わせた自然な会話",
+      "テストではなく『楽しい時間』として続く",
+      "ご家族との会話のきっかけにも",
+    ],
+    gradient: "from-rose-300 to-coral",
+    shadow: "shadow-rose-300/50",
+  },
+  {
     icon: Lightbulb,
-    title: "アシスタントとして",
-    body: "わからないことや、ちょっとした調べごとを気軽に聞けます。スマホやパソコンが苦手でも、電話で話すだけ。",
+    title: "暮らしのアシスタント",
+    body: "わからないことや、ちょっとした調べごとを電話で気軽に。スマホやパソコンが苦手でも、話すだけで使えます。",
     examples: [
       "「今日の天気は？」",
       "「この薬、いつ飲むんだっけ」",
@@ -23,42 +59,6 @@ const USE_CASES: UseCase[] = [
     ],
     gradient: "from-amber-300 to-warm-orange",
     shadow: "shadow-amber-300/50",
-  },
-  {
-    icon: ShieldCheck,
-    title: "安否確認",
-    body: "毎日決まった時間にお電話。お返事がなかったり、気になるご様子があればご家族へ自動でお知らせします。",
-    examples: [
-      "「今日も元気そう」を毎日確認",
-      "応答なしの時は再発信＋SMS通知",
-      "「具合が悪い」を察知して即通知",
-    ],
-    gradient: "from-emerald-300 to-emerald-500",
-    shadow: "shadow-emerald-300/50",
-  },
-  {
-    icon: MessageCircle,
-    title: "お話し相手",
-    body: "今日あったこと、昔の思い出、季節の話。誰かに聞いてもらえるだけで、毎日の気持ちが軽くなります。",
-    examples: [
-      "一人暮らしの寂しさをやわらげる",
-      "ご家族との距離を埋める",
-      "毎日5分の「自分の時間」",
-    ],
-    gradient: "from-rose-300 to-coral",
-    shadow: "shadow-rose-300/50",
-  },
-  {
-    icon: Brain,
-    title: "脳トレーニング",
-    body: "会話そのものが、頭と心の運動。米国NIHの臨床試験でも、毎日の会話が認知機能を保つことが示されています。",
-    examples: [
-      "言葉を探す・思い出す",
-      "新しい話題で頭をやわらかく",
-      "楽しみながら毎日続けられる",
-    ],
-    gradient: "from-violet-300 to-violet-500",
-    shadow: "shadow-violet-300/50",
   },
 ];
 
@@ -71,10 +71,10 @@ export function ForWhomSection() {
             ユースケース
           </span>
           <h2 className="font-serif text-3xl font-medium tracking-tight text-warm-brown sm:text-4xl md:text-5xl">
-            カヨは、こんなふうに使えます。
+            カヨは、認知症対策をこう支えます。
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base text-warm-brown/70">
-            毎日の暮らしの中で、いろんな役割でお役に立ちます。
+            楽しい毎日の習慣として、ご両親の脳の健康とご家族の安心を。
           </p>
         </div>
 

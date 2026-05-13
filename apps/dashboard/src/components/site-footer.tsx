@@ -55,9 +55,9 @@ export function SiteFooter() {
               </span>
             </Link>
             <p className="mt-4 text-sm leading-relaxed text-warm-gray">
-              シニアとご家族のための、
+              認知症対策に特化した、
               <br />
-              毎日の電話AIコンパニオン。
+              シニアとご家族のためのAI電話サービス。
             </p>
           </div>
 

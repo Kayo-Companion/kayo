@@ -348,6 +348,76 @@ async def twilio_amd_result(
     return Response(status_code=204)
 
 
+@router.post("/twilio/recording-status")
+async def twilio_recording_status(
+    request: Request,
+    CallSid: str = Form(...),  # noqa: N803
+    RecordingSid: str = Form(...),  # noqa: N803
+    RecordingUrl: str = Form(...),  # noqa: N803
+    RecordingStatus: str = Form(...),  # noqa: N803
+    RecordingDuration: str | None = Form(None),  # noqa: N803
+) -> Response:
+    """Twilio posts here when the call recording is fully assembled.
+
+    We persist the URL on the call row so the family dashboard and the
+    research pipeline can fetch the audio. Recordings live in Twilio's
+    storage by default; a later job can mirror them to Supabase Storage
+    if we want long-term retention beyond Twilio's retention window.
+
+    The URL Twilio posts here lacks an extension; appending `.mp3` (or
+    `.wav`) gives you the playable file, but we store the canonical form
+    and let downstream code decide.
+    """
+    senior_id = request.query_params.get("senior_id")
+    logger.info(
+        "Recording status: call=%s recording=%s status=%s duration=%ss senior=%s",
+        CallSid, RecordingSid, RecordingStatus, RecordingDuration or "?", senior_id,
+    )
+
+    if RecordingStatus != "completed":
+        return Response(status_code=204)
+
+    if not senior_id:
+        logger.warning("Recording callback missing senior_id query param")
+        return Response(status_code=204)
+
+    db = get_db()
+    # Recording completed-callbacks fire after the call ends. The matching
+    # call row is the most recently started call for this senior. We don't
+    # currently persist Twilio's CallSid on the row, so we use that
+    # latest-call heuristic instead — robust enough since recording-status
+    # arrives within ~30 seconds of call end.
+    try:
+        res = (
+            await db._client.table("calls")  # type: ignore[attr-defined]
+            .select("id")
+            .eq("senior_id", senior_id)
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        call_id = rows[0]["id"] if rows else None
+    except AttributeError:
+        # Memory DB fallback — no Supabase client. Skip persistence.
+        return Response(status_code=204)
+    except Exception:
+        logger.exception("Failed to look up call for recording %s", RecordingSid)
+        return Response(status_code=204)
+
+    if not call_id:
+        logger.warning("No call row found for senior %s", senior_id)
+        return Response(status_code=204)
+
+    try:
+        await db.save_recording_url(call_id=call_id, url=RecordingUrl)
+        logger.info("Saved recording URL for call %s: %s", call_id, RecordingUrl)
+    except Exception:
+        logger.exception("Failed to save recording URL for call %s", call_id)
+
+    return Response(status_code=204)
+
+
 def _twiml_response(body: str) -> Response:
     return Response(content=body, media_type="application/xml")
 
@@ -415,8 +485,20 @@ async def place_outbound_call(
     # Twilio posts the final call status here when the call ends. We use it
     # to fire the no-answer emergency SMS (if the senior has it enabled).
     status_callback_url = f"{settings.voice_api_url}/twilio/call-status?{qs}"
+    # Twilio posts here once the call recording is fully assembled. We
+    # stash the URL on the call row so the dashboard / future research
+    # pipeline can fetch the audio.
+    recording_callback_url = (
+        f"{settings.voice_api_url}/twilio/recording-status?{qs}"
+    )
 
     # Common kwargs across both call paths.
+    #
+    # Recording is enabled on every outbound call so we have the audio
+    # available for (a) the family if they want to listen back and (b)
+    # future research / model training. The recording captures the whole
+    # call audio in parallel with the Media Stream the bridge consumes;
+    # there's no impact on the live conversation.
     call_kwargs: dict[str, Any] = {
         "to": to_number,
         "from_": settings.twilio_phone_number,
@@ -425,6 +507,10 @@ async def place_outbound_call(
         "status_callback": status_callback_url,
         "status_callback_method": "POST",
         "status_callback_event": ["completed"],
+        "record": True,
+        "recording_status_callback": recording_callback_url,
+        "recording_status_callback_method": "POST",
+        "recording_status_callback_event": ["completed"],
     }
 
     if manual:

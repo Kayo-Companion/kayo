@@ -147,4 +147,34 @@ async def summarize_and_persist(
             logger.exception(
                 "Failed to persist long-term facts for senior %s", senior_id
             )
+
+    # Extract dashboard observations ("気になる変化" / "良い変化"). Best-effort
+    # — never blocks the rest of the post-call pipeline.
+    try:
+        # Local import avoids a circular dependency at module load time.
+        from .observations import extract_observations
+
+        senior = await db.get_senior(senior_id)
+        long_term_facts = (senior.long_term_facts or []) if senior else []
+        # The summary we just wrote is included so the model can compare
+        # today to a longer recent window. Fetch BEFORE the new summary
+        # was added to keep the comparison meaningful — but the summary
+        # already exists in DB now, so request limit+1 and drop today's.
+        recent = await db.get_recent_summaries(senior_id, limit=6)
+        recent_minus_today = [s for s in recent if s != summary.summary][:5]
+
+        observations = await extract_observations(
+            transcript,
+            long_term_facts=long_term_facts,
+            past_summaries=recent_minus_today,
+            agent_name=agent_name,
+        )
+        if observations:
+            await db.save_observations(call_id=call_id, observations=observations)
+            logger.info(
+                "Saved %d observation(s) for call %s", len(observations), call_id
+            )
+    except Exception:
+        logger.exception("Failed to extract observations for call %s", call_id)
+
     return summary

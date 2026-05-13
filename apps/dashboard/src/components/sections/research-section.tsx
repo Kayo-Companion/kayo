@@ -39,17 +39,17 @@ export function ResearchSection() {
             科学的裏付け
           </span>
           <h2 className="font-serif text-3xl font-medium leading-tight tracking-tight text-warm-brown sm:text-4xl md:text-5xl">
-            毎日の会話が、
+            会話の継続が、
             <br />
             <span className="bg-gradient-to-br from-coral to-warm-orange bg-clip-text text-transparent">
-              認知機能
+              認知機能の維持
             </span>
-            を守る。
+            に。
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-warm-brown/75 md:text-lg">
-            米国の研究機関が、毎日の会話を続けた高齢者の認知機能が
-            <span className="font-semibold text-warm-brown">はっきりと改善した</span>
-            ことを臨床試験で確認しました。
+            米国の研究機関の臨床試験で、毎日の会話を続けた高齢者の認知機能に
+            <span className="font-semibold text-warm-brown">明らかな改善</span>
+            が示されました。カヨは、この知見をもとに、楽しい会話と脳の体操をご両親の毎日の習慣としてお届けします。
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export function ResearchSection() {
 
         {/* Compliance footnote */}
         <p className="mt-6 max-w-3xl text-xs leading-relaxed text-warm-gray">
-          ※カヨは医療機器ではありません。認知症の診断・治療・予防を目的とするものではなく、本研究は会話介入一般の認知機能への効果を示すものです。個別の症状については医療専門家にご相談ください。
+          ※カヨは医療機器ではありません。認知症の診断・治療・予防を目的とするものではなく、本研究は会話介入一般の認知機能への効果を示すものです。カヨ独自のサービス効果の科学的検証は現在進行中で、研究機関との連携に向けて準備を進めています。個別の症状については医療専門家にご相談ください。
         </p>
       </div>
     </section>

@@ -41,18 +41,18 @@ const jsonLd = {
       url: SITE_URL,
       name: "カヨ",
       description:
-        "シニア向けAI電話コンパニオン。毎日決まった時間に、優しい話し相手から固定電話または携帯電話へお電話します。",
+        "ご両親の認知症対策に特化したAI電話サービス。楽しい会話とことば遊びの中に認知症対策を自然に組み込み、ご家族の早期の気づきをサポートします。",
       publisher: { "@id": `${SITE_URL}/#organization` },
       inLanguage: "ja-JP",
     },
     {
       "@type": "Service",
-      name: "カヨ AI電話コンパニオン",
-      serviceType: "AIによるシニア向け電話会話サービス",
+      name: "カヨ 認知症対策AI電話サービス",
+      serviceType: "高齢者向け認知症対策AI電話サービス",
       provider: { "@id": `${SITE_URL}/#organization` },
       areaServed: { "@type": "Country", name: "Japan" },
       description:
-        "毎日決まった時間に、AIの話し相手「カヨ」から高齢者の固定電話・携帯電話へ自動でお電話します。アプリ不要、スマホ不要。離れて暮らすご家族のための見守りと会話のサービスです。",
+        "ご両親の認知機能の維持を、毎日の習慣に。楽しいことば遊びと会話の中に認知症対策を自然に組み込み、変化があればご家族が一番早く気づけるようサポートします。アプリ不要、電話のみで完結します。",
       audience: { "@type": "PeopleAudience", suggestedMinAge: 60 },
       offers: [
         {

@@ -21,6 +21,12 @@ interface SignUpPayload {
   buyerPhone: string;
   buyerPhoneVerified: boolean;
   agentName?: string;
+  // Required: the legal acceptance gate. Without this the checkout was
+  // blocked on the client; we re-check here in case the request was
+  // crafted without going through the UI.
+  termsAccepted?: boolean;
+  // Optional opt-in: future research use of anonymized data.
+  researchConsent?: boolean;
 }
 
 function planPriceId(plan: Plan): string | undefined {
@@ -56,6 +62,9 @@ export async function POST(request: Request) {
   }
   if (!data.buyerPhoneVerified) {
     return NextResponse.json({ error: "buyer_phone_unverified" }, { status: 400 });
+  }
+  if (!data.termsAccepted) {
+    return NextResponse.json({ error: "terms_not_accepted" }, { status: 400 });
   }
 
   // Treat placeholder values (e.g. "sk_test_...") as "not configured" so the
@@ -110,6 +119,10 @@ export async function POST(request: Request) {
         introducer_relationship: data.introducerRelationship ?? "",
         schedule: JSON.stringify(data.schedule),
         agent_name: (data.agentName ?? "").trim(),
+        // Captured at checkout — applied to the family row by the
+        // post-payment webhook. Stripe metadata values are always strings.
+        terms_accepted_at: new Date().toISOString(),
+        research_consent: data.researchConsent ? "true" : "false",
       },
     },
     return_url: `${origin}/sign-up/return?session_id={CHECKOUT_SESSION_ID}`,

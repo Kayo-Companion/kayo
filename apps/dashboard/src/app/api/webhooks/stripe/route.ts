@@ -110,6 +110,14 @@ export async function POST(request: Request) {
       //    identifier and we don't collect email at signup. The families.email
       //    column stays nullable for future use.
       const plan = (md.plan as "light" | "standard" | "premium") ?? "standard";
+      // Consent flags captured at checkout. Both are persisted on the
+      // family row; terms_accepted_at is timestamped by us (the timestamp
+      // came across in metadata as an ISO string); research_consent is a
+      // boolean flag the user explicitly opted into. research_consent_at
+      // is set whenever the flag flips on, so we can later show the user
+      // when they granted consent.
+      const termsAcceptedAt = md.terms_accepted_at || null;
+      const researchConsent = md.research_consent === "true";
       const { data: family, error: familyErr } = await supabase
         .from("families")
         .upsert(
@@ -122,6 +130,9 @@ export async function POST(request: Request) {
             plan,
             minutes_limit: PLAN_MINUTES[plan] ?? 400,
             minutes_used: 0,
+            terms_accepted_at: termsAcceptedAt,
+            research_consent: researchConsent,
+            research_consent_at: researchConsent ? new Date().toISOString() : null,
           },
           { onConflict: "user_id" }
         )

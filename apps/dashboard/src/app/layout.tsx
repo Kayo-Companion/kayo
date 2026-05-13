@@ -22,9 +22,9 @@ const SITE_URL =
   "https://kayo.me";
 
 const SITE_NAME = "カヨ";
-const DEFAULT_TITLE = "カヨ｜大切な人に、毎日のお話し相手を。";
+const DEFAULT_TITLE = "カヨ｜ご両親の脳の健康、今のうちから。";
 const DEFAULT_DESCRIPTION =
-  "カヨはシニア向けAI電話コンパニオン。毎日決まった時間に、優しい話し相手から固定電話または携帯電話へお電話します。アプリも新しい機器もいりません。月額3,980円から、初月7日間無料。";
+  "カヨは認知症対策に特化したAI電話サービス。楽しいことば遊びと会話の中に認知症対策を自然に組み込み、ご両親の認知機能の維持と、ご家族の早期の気づきをサポートします。アプリ不要、電話のみ。月額3,980円から、初月7日間無料。";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -35,15 +35,17 @@ export const metadata: Metadata = {
   description: DEFAULT_DESCRIPTION,
   applicationName: SITE_NAME,
   keywords: [
+    "認知症 対策",
+    "認知症 予防",
+    "認知機能 維持",
+    "脳の健康",
     "高齢者 電話",
     "シニア AI",
     "親 見守り",
-    "認知症 予防",
-    "話し相手 サービス",
-    "オレオレ詐欺 対策",
-    "AI コンパニオン",
-    "高齢者 孤独",
+    "認知症 早期発見",
+    "MCI 軽度認知障害",
     "離れて暮らす親",
+    "オレオレ詐欺 対策",
     "カヨ",
   ],
   authors: [{ name: SITE_NAME }],
@@ -55,7 +57,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: DEFAULT_TITLE,
     description:
-      "毎日決まった時間にカヨから電話します。電話に出るだけで会話できる、シニア向けAI話し相手サービス。",
+      "ご両親の認知機能の維持を、毎日の習慣に。楽しい会話の中に認知症対策を自然に組み込み、ご家族の早期の気づきをサポート。",
     url: SITE_URL,
     siteName: SITE_NAME,
     type: "website",
@@ -73,7 +75,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: DEFAULT_TITLE,
     description:
-      "毎日決まった時間にカヨから電話します。電話に出るだけで会話できる、シニア向けAI話し相手サービス。",
+      "ご両親の認知機能の維持を、毎日の習慣に。楽しい会話の中に認知症対策を自然に組み込み、ご家族の早期の気づきをサポート。",
     images: ["/logo-mark.png"],
   },
   robots: {
