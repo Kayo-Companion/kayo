@@ -6,9 +6,9 @@ import { usePathname } from "next/navigation";
 /**
  * Pill-style tab switcher under the per-senior page header.
  *
- * Renders two links: dashboard (default route) and settings.
- * Active tab is determined from the current pathname so we don't have to
- * thread an `active` prop through every page.
+ * Renders three links: dashboard (default route), 気づき (insights), and
+ * settings. Active tab is determined from the current pathname so we
+ * don't have to thread an `active` prop through every page.
  */
 export function SeniorTabs({ seniorId }: { seniorId: string }) {
   const pathname = usePathname();
@@ -19,6 +19,11 @@ export function SeniorTabs({ seniorId }: { seniorId: string }) {
       href: base,
       label: "ダッシュボード",
       isActive: pathname === base,
+    },
+    {
+      href: `${base}/insights`,
+      label: "気づき",
+      isActive: pathname.startsWith(`${base}/insights`),
     },
     {
       href: `${base}/settings`,

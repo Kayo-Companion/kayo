@@ -6,11 +6,8 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { SeniorTabs } from "./_components/senior-tabs";
 import { ActivityBars, type DayCalls } from "./_components/activity-bars";
 import { CallNowButton } from "./_components/call-now-button";
-import {
-  ObservationsCard,
-  type Observation,
-  type ObservationEntry,
-} from "./_components/observations-card";
+// Observations now live on their own /insights tab (traffic-light buckets).
+// The old flat-list card is no longer rendered on the main dashboard.
 
 const TZ = "Asia/Tokyo";
 
@@ -53,21 +50,6 @@ export default async function SeniorDashboardPage({
     .eq("senior_id", id)
     .gte("started_at", since.toISOString())
     .order("started_at", { ascending: true });
-
-  // 30-day window for the observations card. Most calls produce no
-  // observations, so we cast a wider net than the activity bars.
-  const obsSince = new Date();
-  obsSince.setDate(obsSince.getDate() - 30);
-  obsSince.setHours(0, 0, 0, 0);
-  const { data: obsRows } = await supabase
-    .from("calls")
-    .select("id, started_at, observations")
-    .eq("senior_id", id)
-    .gte("started_at", obsSince.toISOString())
-    .not("observations", "is", null)
-    .order("started_at", { ascending: false });
-
-  const observationEntries: ObservationEntry[] = flattenObservations(obsRows ?? []);
 
   const days = aggregateByDay(calls ?? [], senior.call_timezone || TZ);
   const familyHasMinutes = family.minutes_used < family.minutes_limit;
@@ -120,54 +102,14 @@ export default async function SeniorDashboardPage({
           />
         </GlassCard>
 
-        <ObservationsCard
-          seniorName={senior.name}
-          entries={observationEntries}
-          tz={senior.call_timezone || TZ}
-        />
+        <p className="rounded-2xl border border-rose-300/40 bg-white/60 p-4 text-sm text-warm-brown/80">
+          {senior.name}さんとの会話から見つかった気づきは、
+          上のタブ <strong className="text-warm-brown">「気づき」</strong>
+          にまとめています。
+        </p>
       </div>
     </main>
   );
-}
-
-interface ObservationRow {
-  id: string;
-  started_at: string;
-  observations: Observation[] | null;
-}
-
-function flattenObservations(rows: ObservationRow[]): ObservationEntry[] {
-  const out: ObservationEntry[] = [];
-  for (const row of rows) {
-    if (!Array.isArray(row.observations)) continue;
-    for (const obs of row.observations) {
-      if (!obs || typeof obs !== "object" || !obs.detail) continue;
-      out.push({
-        observation: obs,
-        call_id: row.id,
-        started_at: row.started_at,
-      });
-    }
-  }
-  // Cap at a reasonable display count so the card stays scannable. Most
-  // calls produce 0–2 observations, so 12 covers a typical month while
-  // still ranking high-severity items near the top.
-  out.sort((a, b) => {
-    // 1) high-severity concerning items first
-    const sevA = severityRank(a.observation);
-    const sevB = severityRank(b.observation);
-    if (sevA !== sevB) return sevA - sevB;
-    // 2) then by date desc
-    return b.started_at.localeCompare(a.started_at);
-  });
-  return out.slice(0, 12);
-}
-
-function severityRank(o: Observation): number {
-  if (o.positive) return 3;
-  if (o.severity === "high") return 0;
-  if (o.severity === "medium") return 1;
-  return 2;
 }
 
 interface CallRow {
