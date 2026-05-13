@@ -21,6 +21,9 @@ export interface SignUpData {
   audience: Audience;
   plan: Plan;
   recipientName: string;
+  // Western year (e.g. 1948). Used to normalize cognitive observations and
+  // research data; not used for tone-of-voice in the LP. Required at signup.
+  recipientBirthYear: number;
   recipientPhone: string;
   schedule: ScheduleEntry[];
   introducerName?: string;

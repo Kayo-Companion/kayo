@@ -159,6 +159,18 @@ export async function POST(request: Request) {
         .eq("phone", md.recipient_phone)
         .maybeSingle();
 
+      // birth_year arrives as a string in Stripe metadata. Validate the
+      // same range the DB CHECK enforces; fall back to null on any
+      // unexpected value so a malformed metadata field doesn't block the
+      // senior row from being created.
+      const birthYearRaw = Number(md.recipient_birth_year);
+      const birthYear =
+        Number.isInteger(birthYearRaw) &&
+        birthYearRaw >= 1900 &&
+        birthYearRaw <= 2010
+          ? birthYearRaw
+          : null;
+
       let senior: { id: string } | null = existingSenior ?? null;
       if (!existingSenior) {
         const { data: created, error: seniorErr } = await supabase
@@ -174,6 +186,7 @@ export async function POST(request: Request) {
             health_notes: null,
             is_active: true,
             agent_name: md.agent_name?.trim() || null,
+            birth_year: birthYear,
           })
           .select("id")
           .single();

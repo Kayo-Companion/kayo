@@ -78,6 +78,9 @@ export function SignUpFormStep({
   const [recipientName, setRecipientName] = useState(
     initialData?.recipientName ?? ""
   );
+  const [recipientBirthYear, setRecipientBirthYear] = useState<string>(
+    initialData?.recipientBirthYear ? String(initialData.recipientBirthYear) : ""
+  );
   const [recipientPhone, setRecipientPhone] = useState(
     initialData?.recipientPhone ?? ""
   );
@@ -129,6 +132,7 @@ export function SignUpFormStep({
       audience,
       plan,
       recipientName: recipientName.trim(),
+      recipientBirthYear: Number(recipientBirthYear),
       recipientPhone: recipientPhone.trim(),
       schedule,
       introducerName: isFamily ? introducerName.trim() : undefined,
@@ -182,8 +186,10 @@ export function SignUpFormStep({
       {subStep === "name" && (
         <NameStep
           audience={audience}
-          value={recipientName}
-          onChange={setRecipientName}
+          name={recipientName}
+          onNameChange={setRecipientName}
+          birthYear={recipientBirthYear}
+          onBirthYearChange={setRecipientBirthYear}
           onNext={() => proceedFrom("name")}
         />
       )}
@@ -272,54 +278,113 @@ export function SignUpFormStep({
 
 function NameStep({
   audience,
-  value,
-  onChange,
+  name,
+  onNameChange,
+  birthYear,
+  onBirthYearChange,
   onNext,
 }: {
   audience: Audience;
-  value: string;
-  onChange: (v: string) => void;
+  name: string;
+  onNameChange: (v: string) => void;
+  birthYear: string;
+  onBirthYearChange: (v: string) => void;
   onNext: () => void;
 }) {
   const heading =
     audience === "self"
-      ? "なんてお呼びすれば良いですか？"
-      : "あの方を、なんてお呼びすれば良いですか？";
+      ? "あなたについて、少しお聞かせください"
+      : "大切な人について、少しお聞かせください";
   const sub =
-    audience === "self"
-      ? "カヨが毎日のお電話でお呼びする名前です。下のお名前やニックネームでも大丈夫です。"
-      : "カヨが毎日のお電話でお呼びする、お相手の名前です。下のお名前やニックネームで大丈夫です。";
+    "カヨが毎日のお電話でお呼びする名前と、認知機能の見守りに使う生まれた年をお伺いします。お名前はニックネームでも大丈夫です。";
   const placeholder = audience === "self" ? "例：花子" : "例：美智子";
-  const canProceed = value.trim().length > 0;
   const noAutofill = useNoAutofill();
+
+  // Birth-year validation mirrors the seniors.birth_year DB CHECK so we
+  // never submit a value the row would reject. Year is required because
+  // cognitive-function observations need age-stratified normalization to
+  // mean anything for research.
+  const parsedYear = Number(birthYear);
+  const yearIsValid =
+    /^\d{4}$/.test(birthYear.trim()) &&
+    Number.isInteger(parsedYear) &&
+    parsedYear >= 1900 &&
+    parsedYear <= 2010;
+  const age = yearIsValid ? new Date().getFullYear() - parsedYear : null;
+  const canProceed = name.trim().length > 0 && yearIsValid;
 
   return (
     <StepShell heading={heading} sub={sub}>
-      <input
-        key="name-input"
-        ref={noAutofill.ref}
-        name="kayo-recipient-name"
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`${inputClass} text-lg`}
-        autoComplete="off"
-        data-form-type="other"
-        data-lpignore="true"
-        data-1p-ignore=""
-        spellCheck={false}
-        readOnly={noAutofill.readOnly}
-        onFocus={noAutofill.onFocus}
-        onClick={noAutofill.onClick}
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && canProceed) {
-            e.preventDefault();
-            onNext();
-          }
-        }}
-      />
+      <Field label="お名前" required>
+        <input
+          key="name-input"
+          ref={noAutofill.ref}
+          name="kayo-recipient-name"
+          type="text"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder={placeholder}
+          className={`${inputClass} text-lg`}
+          autoComplete="off"
+          data-form-type="other"
+          data-lpignore="true"
+          data-1p-ignore=""
+          spellCheck={false}
+          readOnly={noAutofill.readOnly}
+          onFocus={noAutofill.onFocus}
+          onClick={noAutofill.onClick}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && canProceed) {
+              e.preventDefault();
+              onNext();
+            }
+          }}
+        />
+      </Field>
+
+      <Field label="生まれた年（西暦4桁）" required>
+        <input
+          key="birth-year-input"
+          name="kayo-birth-year"
+          type="number"
+          inputMode="numeric"
+          pattern="\d{4}"
+          min={1900}
+          max={2010}
+          value={birthYear}
+          onChange={(e) => {
+            // Strip non-digits and cap at 4 chars so a runaway keypad
+            // press can't push the value out of range.
+            const v = e.target.value.replace(/[^\d]/g, "").slice(0, 4);
+            onBirthYearChange(v);
+          }}
+          placeholder="例：1948"
+          className={`${inputClass} text-lg`}
+          autoComplete="off"
+          spellCheck={false}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && canProceed) {
+              e.preventDefault();
+              onNext();
+            }
+          }}
+        />
+        <p className="mt-2 text-xs text-warm-gray">
+          認知機能の見守りでは年齢別のデータと比較することが大切です。
+          {audience === "self" ? "あなた" : "ご本人"}
+          のレポート作成にのみ使用します。
+          {age !== null && (
+            <>
+              {" "}
+              <span className="font-medium text-warm-brown">
+                （今年で{age}歳）
+              </span>
+            </>
+          )}
+        </p>
+      </Field>
+
       <NextButton onClick={onNext} disabled={!canProceed} />
     </StepShell>
   );

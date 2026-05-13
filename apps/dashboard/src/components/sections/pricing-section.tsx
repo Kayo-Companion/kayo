@@ -19,7 +19,7 @@ const TIERS: Tier[] = [
     name: "ライト",
     price: 3980,
     minutes: 100,
-    pitch: "まずは試してみたい方に",
+    pitch: "週に数回、軽くおしゃべり",
     features: [
       "毎月100分まで通話",
       "ご家族を複数人ご登録可能",
@@ -34,7 +34,7 @@ const TIERS: Tier[] = [
     price: 9800,
     minutes: 400,
     highlight: true,
-    pitch: "毎日たっぷりお話したい方に",
+    pitch: "気が向いた時にいつでもおしゃべり",
     features: [
       "毎月400分まで通話",
       "ご家族を複数人ご登録可能",
@@ -48,7 +48,7 @@ const TIERS: Tier[] = [
     name: "プレミアム",
     price: 19800,
     minutes: 1000,
-    pitch: "見守りメインでご利用の方に",
+    pitch: "ご家族複数 ・ じっくりお話したい方",
     features: [
       "毎月1,000分まで通話",
       "複数のご家族へ同時にお電話可能",

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SeniorTabs } from "../_components/senior-tabs";
 import {
   InsightsBuckets,
+  keyFor,
   type Observation,
   type ObservationEntry,
 } from "../_components/insights-buckets";
@@ -12,16 +13,17 @@ import {
 const TZ = "Asia/Tokyo";
 
 /**
- * The 気づき tab — traffic-light buckets of observations from the last
- * ~20 calls (or 30 days, whichever is smaller in practice). Deliberately
- * non-clinical:
- *   🟢 安心ポイント
- *   🟡 ちょっと気にとめておきたい
- *   🔴 ご家族と話してみてください
+ * The 気づき tab — a single combined timeline of observations the family
+ * may want to glance at. New entries stack at the top; each row has a ✓
+ * dismiss button.
  *
- * The bucket logic lives in insights-buckets.tsx so it stays unit-
- * testable and can later get its own observations-aggregator route
- * for parents who want the data as JSON.
+ * Filtering rules (server-side):
+ *   - Drop positive observations entirely (they were just summary noise).
+ *   - Drop observations whose key ("<call_id>:<index>") is in
+ *     seniors.dismissed_observations (set when the family clicks ✓).
+ *
+ * Deliberately non-clinical: no scores, percentages, or medical
+ * language — disclaimer at the bottom reinforces this.
  */
 export default async function SeniorInsightsPage({
   params,
@@ -37,7 +39,7 @@ export default async function SeniorInsightsPage({
 
   const { data: senior } = await supabase
     .from("seniors")
-    .select("id, name, family_id, call_timezone")
+    .select("id, name, family_id, call_timezone, dismissed_observations")
     .eq("id", id)
     .maybeSingle();
   if (!senior) notFound();
@@ -51,8 +53,14 @@ export default async function SeniorInsightsPage({
     .maybeSingle();
   if (!family) notFound();
 
-  // 30-day window matches the existing observations card. Most calls
-  // produce 0-2 observations so this is a generous net.
+  const dismissed = new Set<string>(
+    Array.isArray(senior.dismissed_observations)
+      ? (senior.dismissed_observations as string[])
+      : []
+  );
+
+  // 30-day window. Cast a wide enough net to catch repeating patterns
+  // without overwhelming the UI; the dismiss flow keeps it manageable.
   const since = new Date();
   since.setDate(since.getDate() - 30);
   since.setHours(0, 0, 0, 0);
@@ -66,16 +74,31 @@ export default async function SeniorInsightsPage({
     .order("started_at", { ascending: false });
 
   const rows = (obsRows ?? []) as ObservationRow[];
-  const entries: ObservationEntry[] = flattenObservations(rows);
+  // Flatten, drop positives, drop dismissed.
+  const entries: ObservationEntry[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row.observations)) continue;
+    row.observations.forEach((obs, index) => {
+      if (!obs || typeof obs !== "object" || !obs.detail) return;
+      if (obs.positive) return;
+      const entry: ObservationEntry = {
+        observation: obs,
+        call_id: row.id,
+        index,
+        started_at: row.started_at,
+      };
+      if (dismissed.has(keyFor(entry))) return;
+      entries.push(entry);
+    });
+  }
+  // Already in newest-first order because the SQL is desc by started_at
+  // and forEach preserves array order within each call. Good as-is.
 
   const tz = senior.call_timezone || TZ;
 
   return (
     <main className="min-h-screen bg-cream py-12 md:py-16">
-      {/* Wider than other tabs (max-w-3xl) because the buckets need room
-          to lay out side-by-side on desktop without each column becoming
-          too narrow. */}
-      <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-3xl space-y-6 px-4 sm:px-6 lg:px-8">
         <Link
           href="/dashboard"
           className="inline-flex items-center gap-1 text-sm text-warm-gray hover:text-coral"
@@ -92,17 +115,16 @@ export default async function SeniorInsightsPage({
               {senior.name} さん
             </h1>
             <p className="mt-2 text-sm text-warm-brown/75 leading-relaxed">
-              最近のお話の中から、ご家族にお伝えしたい
+              最近のお話から、ご家族にお伝えしたい
               <strong className="text-warm-brown">「気にとめておきたい」</strong>
-              点や
-              <strong className="text-warm-brown">「安心」</strong>
-              ポイントを、3つの信号にまとめています。
+              点をまとめています。新しいものから順に表示され、確認したら ✓ で消せます。
             </p>
           </div>
           <SeniorTabs seniorId={senior.id} />
         </header>
 
         <InsightsBuckets
+          seniorId={senior.id}
           seniorName={senior.name}
           entries={entries}
           callsScanned={rows.length}
@@ -117,20 +139,4 @@ interface ObservationRow {
   id: string;
   started_at: string;
   observations: Observation[] | null;
-}
-
-function flattenObservations(rows: ObservationRow[]): ObservationEntry[] {
-  const out: ObservationEntry[] = [];
-  for (const row of rows) {
-    if (!Array.isArray(row.observations)) continue;
-    for (const obs of row.observations) {
-      if (!obs || typeof obs !== "object" || !obs.detail) continue;
-      out.push({
-        observation: obs,
-        call_id: row.id,
-        started_at: row.started_at,
-      });
-    }
-  }
-  return out;
 }

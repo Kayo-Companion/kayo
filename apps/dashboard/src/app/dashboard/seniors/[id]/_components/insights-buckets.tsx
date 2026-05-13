@@ -1,4 +1,8 @@
-import { CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
+"use client";
+
+import { Check, AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/glass-card";
 
 /** One observation row stored under `calls.observations`. */
@@ -21,176 +25,137 @@ export interface Observation {
 export interface ObservationEntry {
   observation: Observation;
   call_id: string;
+  /** Position of the observation in the original calls.observations array.
+   *  Combined with call_id this forms the dismiss key "<call_id>:<index>". */
+  index: number;
   started_at: string; // ISO
 }
 
-/**
- * Family-facing "気づき" view. Buckets observations from the most recent
- * window of calls into three traffic-light signals:
- *
- *   🟢 安心ポイント        — positive observations (good signs)
- *   🟡 ちょっと気にとめておきたい — low/medium concerning observations
- *   🔴 ご家族と話してみてください — high-severity OR same type repeating 3+ times
- *
- * Note: this is deliberately NOT a clinical assessment. We never use
- * scores, percentages, risk levels, or any medical / diagnostic language.
- * The disclaimer at the bottom reinforces this.
- */
-
-interface BucketEntry {
-  /** Headline shown in the bucket. */
-  headline: string;
-  /** Evidence / quote shown in light gray. */
-  evidence?: string;
-  /** Latest call this was observed in (ISO). */
-  latestDate: string;
-  /** How many calls in the recent window this type was seen. */
-  count: number;
-  /** Underlying type for grouping. */
-  type: Observation["type"];
-}
-
-interface Buckets {
-  green: BucketEntry[];
-  yellow: BucketEntry[];
-  red: BucketEntry[];
-}
-
-/**
- * Threshold: if a non-positive observation type shows up this many times
- * in the recent window, we escalate from yellow to red. Picked at 3
- * because that's "noticeable pattern, not isolated event" without being
- * so high it never fires.
- */
-const RED_REPEAT_THRESHOLD = 3;
-
-/**
- * Reduce a flat list of observation entries into the three buckets.
- *
- * - Positive entries → green (deduped by type, keep latest detail).
- * - Non-positive entries → group by type. Count occurrences.
- *   - severity=high                        → red
- *   - count >= RED_REPEAT_THRESHOLD        → red (with "X回観察" framing)
- *   - else                                 → yellow
- */
-export function bucketObservations(entries: ObservationEntry[]): Buckets {
-  // Order entries newest-first so "latest detail" picks the most recent.
-  const sorted = [...entries].sort((a, b) =>
-    b.started_at.localeCompare(a.started_at)
-  );
-
-  // Group by type for non-positives; positives are deduped by type too but
-  // shown straight (no "X回" framing — positives are positives).
-  const greenByType = new Map<Observation["type"], BucketEntry>();
-  const concernByType = new Map<
-    Observation["type"],
-    { entries: ObservationEntry[]; maxSeverity: "low" | "medium" | "high" }
-  >();
-
-  for (const e of sorted) {
-    const o = e.observation;
-    if (o.positive) {
-      if (!greenByType.has(o.type)) {
-        greenByType.set(o.type, {
-          headline: o.detail,
-          evidence: o.evidence,
-          latestDate: e.started_at,
-          count: 1,
-          type: o.type,
-        });
-      } else {
-        const existing = greenByType.get(o.type)!;
-        existing.count += 1;
-      }
-    } else {
-      if (!concernByType.has(o.type)) {
-        concernByType.set(o.type, { entries: [e], maxSeverity: o.severity });
-      } else {
-        const g = concernByType.get(o.type)!;
-        g.entries.push(e);
-        if (severityRank(o.severity) > severityRank(g.maxSeverity)) {
-          g.maxSeverity = o.severity;
-        }
-      }
-    }
-  }
-
-  const yellow: BucketEntry[] = [];
-  const red: BucketEntry[] = [];
-
-  for (const [type, group] of concernByType) {
-    const latest = group.entries[0]; // sorted newest-first
-    const count = group.entries.length;
-    const isRepeated = count >= RED_REPEAT_THRESHOLD;
-    const isHighSeverity = group.maxSeverity === "high";
-
-    const entry: BucketEntry = {
-      headline: isRepeated
-        ? `${latest.observation.detail}（${count}回観察）`
-        : latest.observation.detail,
-      evidence: latest.observation.evidence,
-      latestDate: latest.started_at,
-      count,
-      type,
-    };
-
-    if (isHighSeverity || isRepeated) {
-      red.push(entry);
-    } else {
-      yellow.push(entry);
-    }
-  }
-
-  return {
-    green: [...greenByType.values()],
-    yellow,
-    red,
-  };
-}
-
-function severityRank(s: "low" | "medium" | "high"): number {
-  return s === "high" ? 3 : s === "medium" ? 2 : 1;
-}
-
 interface Props {
+  seniorId: string;
   seniorName: string;
+  /** Already filtered: positives stripped, dismissed entries removed. */
   entries: ObservationEntry[];
-  /** Number of calls scanned for context, e.g. "過去20件の通話から" */
+  /** Number of calls scanned. Shown in the disclaimer. */
   callsScanned: number;
   tz: string;
 }
 
-export function InsightsBuckets({ seniorName, entries, callsScanned, tz }: Props) {
-  const { green, yellow, red } = bucketObservations(entries);
+/**
+ * 気づき timeline — single combined "気にとめておきたい" list.
+ *
+ * Earlier versions split this into 🟢 安心 / 🟡 ちょっと / 🔴 注意 columns,
+ * but the green bucket was just a re-statement of the summary, and the
+ * yellow/red split was confusing for non-clinical readers. New design:
+ *
+ *   - One timeline, newest at top.
+ *   - Each row is color-coded by severity (yellow vs red) but lives in
+ *     the same list so it reads as "things to glance at this week".
+ *   - Each row has a ✓ dismiss button. Dismissed entries are persisted
+ *     on the senior row and never reappear.
+ *   - Positive observations are not rendered here at all — they're
+ *     useful context for the LLM but noisy for the family UI.
+ *
+ * Same non-clinical framing: observation, not diagnosis.
+ */
+export function InsightsBuckets({
+  seniorId,
+  seniorName,
+  entries,
+  callsScanned,
+  tz,
+}: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [dismissing, setDismissing] = useState<Set<string>>(new Set());
+  const [locallyDismissed, setLocallyDismissed] = useState<Set<string>>(
+    new Set()
+  );
+
+  const visible = entries.filter(
+    (e) => !locallyDismissed.has(keyFor(e))
+  );
+
+  const handleDismiss = (entry: ObservationEntry) => {
+    const key = keyFor(entry);
+    if (dismissing.has(key)) return;
+
+    // Optimistically remove the row.
+    setDismissing((prev) => new Set(prev).add(key));
+    setLocallyDismissed((prev) => new Set(prev).add(key));
+
+    fetch(`/api/seniors/${seniorId}/observations/dismiss`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          // Roll back the optimistic removal on failure.
+          setLocallyDismissed((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+        } else {
+          // Refresh server-rendered list so subsequent navigations are
+          // consistent without relying on the local set.
+          startTransition(() => router.refresh());
+        }
+      })
+      .catch(() => {
+        setLocallyDismissed((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      })
+      .finally(() => {
+        setDismissing((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      });
+  };
 
   return (
     <div className="space-y-4">
-      {/* On mobile (default) stacks vertically; on lg+ shows three columns
-          side-by-side. items-start keeps the cards top-aligned regardless
-          of how much content they each have. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
-        <Bucket
-          kind="green"
-          title="安心ポイント"
-          emptyMessage={`${seniorName}さんの最近の通話から、ポジティブな観察はまだ見つかっていません。`}
-          items={green}
-          tz={tz}
-        />
-        <Bucket
-          kind="yellow"
-          title="ちょっと気にとめておきたい"
-          emptyMessage="今のところ、気にとめておきたい変化はありません。"
-          items={yellow}
-          tz={tz}
-        />
-        <Bucket
-          kind="red"
-          title="ご家族と話してみてください"
-          emptyMessage="今のところ、ご家族にご相談を促すような変化はありません。"
-          items={red}
-          tz={tz}
-        />
-      </div>
+      <GlassCard className="space-y-3 p-5 md:p-6">
+        <div>
+          <h2 className="font-serif text-lg font-medium text-warm-brown">
+            気にとめておきたいこと
+            <span className="ml-2 text-sm font-normal text-warm-gray">
+              ({visible.length})
+            </span>
+          </h2>
+          <p className="mt-1 text-xs text-warm-gray">
+            確認したら ✓ で消せます。新しい気づきは上に追加されます。
+          </p>
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="rounded-2xl border border-rose-300/40 bg-white/60 p-5 text-sm text-warm-brown/70">
+            今のところ、{seniorName}さんとの通話から気にとめておきたい点は見つかっていません。
+            引き続き、毎日のお話を見守ります。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {visible.map((entry) => {
+              const key = keyFor(entry);
+              return (
+                <ObservationRow
+                  key={key}
+                  entry={entry}
+                  tz={tz}
+                  busy={dismissing.has(key) || isPending}
+                  onDismiss={() => handleDismiss(entry)}
+                />
+              );
+            })}
+          </ul>
+        )}
+      </GlassCard>
 
       <p className="rounded-xl border border-rose-300/40 bg-rose-50/60 px-4 py-3 text-xs leading-relaxed text-warm-brown/80">
         ※ ここに表示されているのは、{seniorName}さんと{agentDefault()}の通話
@@ -201,97 +166,82 @@ export function InsightsBuckets({ seniorName, entries, callsScanned, tz }: Props
   );
 }
 
+export function keyFor(entry: ObservationEntry): string {
+  return `${entry.call_id}:${entry.index}`;
+}
+
 function agentDefault(): string {
-  // Same neutral phrasing as elsewhere; intentionally doesn't reference
-  // the per-senior agent_name because that's not in scope here.
   return "AI";
 }
 
-interface BucketProps {
-  kind: "green" | "yellow" | "red";
-  title: string;
-  emptyMessage: string;
-  items: BucketEntry[];
+interface RowProps {
+  entry: ObservationEntry;
   tz: string;
+  busy: boolean;
+  onDismiss: () => void;
 }
 
-function Bucket({ kind, title, emptyMessage, items, tz }: BucketProps) {
-  const visual = bucketVisual(kind);
-  return (
-    <GlassCard className="space-y-3 p-5 md:p-6">
-      <div className="flex items-center gap-2">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${visual.iconBg}`}
-        >
-          <visual.Icon className={`h-5 w-5 ${visual.iconColor}`} strokeWidth={2.5} />
-        </div>
-        <h2 className={`font-serif text-lg font-medium ${visual.titleColor}`}>
-          {visual.emoji} {title}
-          <span className="ml-2 text-sm font-normal text-warm-gray">
-            ({items.length})
-          </span>
-        </h2>
-      </div>
+function ObservationRow({ entry, tz, busy, onDismiss }: RowProps) {
+  const { observation, started_at } = entry;
+  const visual = visualFor(observation);
 
-      {items.length === 0 ? (
-        <p className="text-sm text-warm-brown/70">{emptyMessage}</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((item, i) => (
-            <li
-              key={`${item.type}-${i}`}
-              className={`rounded-2xl border ${visual.rowBorder} ${visual.rowBg} p-3.5`}
-            >
-              <div className="text-sm leading-relaxed text-warm-brown/90">
-                {item.headline}
-              </div>
-              {item.evidence && (
-                <div className="mt-1 text-xs text-warm-gray">
-                  「{item.evidence}」
-                </div>
-              )}
-              <div className="mt-1 text-[11px] text-warm-gray">
-                {formatDate(item.latestDate, tz)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </GlassCard>
+  return (
+    <li
+      className={`flex items-start gap-3 rounded-2xl border ${visual.border} ${visual.bg} p-3.5 transition-opacity ${
+        busy ? "opacity-50" : ""
+      }`}
+    >
+      <div
+        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${visual.iconBg}`}
+      >
+        <visual.Icon className={`h-4 w-4 ${visual.iconColor}`} strokeWidth={2.5} />
+      </div>
+      <div className="flex-1 space-y-1">
+        <div className="text-sm leading-relaxed text-warm-brown/90">
+          {observation.detail}
+        </div>
+        {observation.evidence && (
+          <div className="text-xs text-warm-gray">「{observation.evidence}」</div>
+        )}
+        <div className="text-[11px] text-warm-gray">
+          {formatDate(started_at, tz)}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        disabled={busy}
+        aria-label="確認済みにする"
+        title="確認済みにする"
+        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-warm-gray transition-colors hover:bg-rose-100 hover:text-coral disabled:opacity-50"
+      >
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Check className="h-4 w-4" strokeWidth={2.5} />
+        )}
+      </button>
+    </li>
   );
 }
 
-function bucketVisual(kind: "green" | "yellow" | "red") {
-  if (kind === "green") {
+function visualFor(observation: Observation) {
+  // High severity → red. Everything else (low/medium) → yellow.
+  if (observation.severity === "high") {
     return {
-      Icon: CheckCircle2,
-      emoji: "🟢",
-      iconBg: "bg-emerald-100",
-      iconColor: "text-emerald-600",
-      titleColor: "text-emerald-700",
-      rowBorder: "border-emerald-300/40",
-      rowBg: "bg-emerald-50/60",
-    };
-  }
-  if (kind === "yellow") {
-    return {
-      Icon: AlertCircle,
-      emoji: "🟡",
-      iconBg: "bg-amber-100",
-      iconColor: "text-amber-600",
-      titleColor: "text-amber-700",
-      rowBorder: "border-amber-300/40",
-      rowBg: "bg-amber-50/60",
+      Icon: AlertTriangle,
+      border: "border-coral/40",
+      bg: "bg-rose-100/40",
+      iconBg: "bg-coral/15",
+      iconColor: "text-coral",
     };
   }
   return {
-    Icon: AlertTriangle,
-    emoji: "🔴",
-    iconBg: "bg-coral/15",
-    iconColor: "text-coral",
-    titleColor: "text-coral",
-    rowBorder: "border-coral/40",
-    rowBg: "bg-rose-100/40",
+    Icon: AlertCircle,
+    border: "border-amber-300/40",
+    bg: "bg-amber-50/60",
+    iconBg: "bg-amber-100",
+    iconColor: "text-amber-600",
   };
 }
 

@@ -14,6 +14,8 @@ interface SignUpPayload {
   audience: "self" | "family";
   plan: Plan;
   recipientName: string;
+  // Western year (e.g. 1948). Required at signup; validated again here.
+  recipientBirthYear: number;
   recipientPhone: string;
   schedule: ScheduleEntry[];
   introducerName?: string;
@@ -66,6 +68,16 @@ export async function POST(request: Request) {
   if (!data.termsAccepted) {
     return NextResponse.json({ error: "terms_not_accepted" }, { status: 400 });
   }
+  // Mirror the DB CHECK on seniors.birth_year. Reject obviously-bad
+  // values rather than letting them propagate into Stripe metadata.
+  const birthYear = Number(data.recipientBirthYear);
+  if (
+    !Number.isInteger(birthYear) ||
+    birthYear < 1900 ||
+    birthYear > 2010
+  ) {
+    return NextResponse.json({ error: "invalid_birth_year" }, { status: 400 });
+  }
 
   // Treat placeholder values (e.g. "sk_test_...") as "not configured" so the
   // dev flow keeps working when the user has scaffolded .env.local but not
@@ -113,6 +125,7 @@ export async function POST(request: Request) {
         plan: data.plan,
         audience: data.audience,
         recipient_name: data.recipientName,
+        recipient_birth_year: String(birthYear),
         recipient_phone: phone,
         buyer_phone: buyerPhone,
         introducer_name: data.introducerName ?? "",
