@@ -1,4 +1,4 @@
-import { ArrowRight, Star, Heart, ShieldCheck } from "lucide-react";
+import { ArrowRight, Star, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -40,17 +40,6 @@ export function HeroSection() {
 
       <div className="relative z-10 mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
         <div className="flex flex-col items-center space-y-8">
-          {/* Badge */}
-          <div className="animate-fade-in delay-100">
-            <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/60 bg-white/70 px-4 py-1.5 backdrop-blur-md">
-              <Heart className="h-3.5 w-3.5 fill-coral text-coral" />
-              <span className="text-xs font-semibold tracking-wide text-warm-brown">
-                認知症対策に特化したAIサービス
-              </span>
-              <Star className="h-3.5 w-3.5 fill-warm-orange text-warm-orange" />
-            </div>
-          </div>
-
           {/* Heading */}
           <h1
             className="animate-fade-in delay-200 font-serif text-[2.75rem] font-medium leading-[1.15] tracking-tight text-warm-brown sm:text-6xl lg:text-[5rem] lg:leading-[1.05]"
