@@ -4,32 +4,12 @@ import { Check, AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { GlassCard } from "@/components/ui/glass-card";
+import { keyFor, type Observation, type ObservationEntry } from "./insights-types";
 
-/** One observation row stored under `calls.observations`. */
-export interface Observation {
-  type:
-    | "forgot_past_fact"
-    | "repeated_story"
-    | "temporal_confusion"
-    | "word_finding"
-    | "engagement_low"
-    | "engagement_high"
-    | "new_topic"
-    | "positive_note";
-  detail: string;
-  severity: "low" | "medium" | "high";
-  evidence?: string;
-  positive?: boolean;
-}
-
-export interface ObservationEntry {
-  observation: Observation;
-  call_id: string;
-  /** Position of the observation in the original calls.observations array.
-   *  Combined with call_id this forms the dismiss key "<call_id>:<index>". */
-  index: number;
-  started_at: string; // ISO
-}
+// Re-export so existing callers that imported these from insights-buckets
+// keep working.
+export { keyFor };
+export type { Observation, ObservationEntry };
 
 interface Props {
   seniorId: string;
@@ -164,10 +144,6 @@ export function InsightsBuckets({
       </p>
     </div>
   );
-}
-
-export function keyFor(entry: ObservationEntry): string {
-  return `${entry.call_id}:${entry.index}`;
 }
 
 function agentDefault(): string {

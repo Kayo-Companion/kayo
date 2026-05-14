@@ -12,6 +12,10 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
+import { useState } from "react";
+import { SafetyReminderModal } from "./_components/safety-reminder-modal";
+import { KayoCallWarningModal } from "./_components/kayo-call-warning-modal";
+import { ContactCardShare } from "./_components/contact-card-share";
 
 interface Family {
   id: string;
@@ -47,8 +51,19 @@ interface Props {
 }
 
 export function DashboardClient({ family, seniors }: Props) {
+  const kayoPhone = formatPhoneForDisplay(
+    process.env.NEXT_PUBLIC_KAYO_PHONE_NUMBER ?? ""
+  );
   return (
     <main className="min-h-screen bg-cream py-12 md:py-16">
+      <SafetyReminderModal
+        seniors={seniors.map((s) => ({
+          id: s.id,
+          name: s.name,
+          schedule: s.schedule,
+        }))}
+        kayoPhone={kayoPhone}
+      />
       <div className="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between">
           <h1 className="font-serif text-3xl font-medium tracking-tight text-warm-brown">
@@ -112,36 +127,55 @@ export function DashboardClient({ family, seniors }: Props) {
 function KayoNumberCard() {
   const raw = process.env.NEXT_PUBLIC_KAYO_PHONE_NUMBER ?? "";
   const display = formatPhoneForDisplay(raw);
-  const telHref = raw ? `tel:${raw.replace(/\s/g, "")}` : undefined;
+  const [warningOpen, setWarningOpen] = useState(false);
 
   return (
-    <GlassCard className="p-6">
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-coral to-warm-orange shadow-lg shadow-coral/40">
-          <PhoneIncoming className="h-6 w-6 text-white" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold uppercase tracking-wider text-warm-gray">
-            カヨの電話番号
+    <>
+      <GlassCard className="p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-coral to-warm-orange shadow-lg shadow-coral/40">
+            <PhoneIncoming className="h-6 w-6 text-white" />
           </div>
-          {display ? (
-            <a
-              href={telHref}
-              className="mt-1 block font-serif text-2xl font-medium tracking-tight text-warm-brown hover:text-coral"
-            >
-              {display}
-            </a>
-          ) : (
-            <p className="mt-1 text-sm text-warm-gray">
-              （未設定）.env.local の NEXT_PUBLIC_KAYO_PHONE_NUMBER を設定してください
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-warm-gray">
+              カヨの電話番号
+            </div>
+            {display ? (
+              <button
+                type="button"
+                onClick={() => setWarningOpen(true)}
+                className="mt-1 block text-left font-serif text-2xl font-medium tracking-tight text-warm-brown hover:text-coral"
+              >
+                {display}
+              </button>
+            ) : (
+              <p className="mt-1 text-sm text-warm-gray">
+                （未設定）.env.local の NEXT_PUBLIC_KAYO_PHONE_NUMBER を設定してください
+              </p>
+            )}
+            <p className="mt-2 text-xs leading-relaxed text-warm-brown/75">
+              ご登録の電話番号からこの番号におかけいただくと、いつでもカヨとお話しいただけます。
+              <span className="mt-0.5 block text-[11px] text-warm-orange/90">
+                ※現在アメリカの番号のため、日本からおかけになる場合は国際電話料金にご注意ください。
+              </span>
             </p>
-          )}
-          <p className="mt-2 text-xs leading-relaxed text-warm-brown/75">
-            ご登録の電話番号からこの番号におかけいただくと、いつでもカヨとお話しいただけます。
-          </p>
+            {display && (
+              <div className="mt-4">
+                <ContactCardShare />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </GlassCard>
+      </GlassCard>
+      {display && (
+        <KayoCallWarningModal
+          open={warningOpen}
+          onClose={() => setWarningOpen(false)}
+          rawPhone={raw}
+          displayPhone={display}
+        />
+      )}
+    </>
   );
 }
 

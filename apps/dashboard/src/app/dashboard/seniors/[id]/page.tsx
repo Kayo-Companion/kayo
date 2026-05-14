@@ -8,6 +8,7 @@ import { ActivityBars, type DayCalls } from "./_components/activity-bars";
 import { CallNowButton } from "./_components/call-now-button";
 // Observations now live on their own /insights tab (traffic-light buckets).
 // The old flat-list card is no longer rendered on the main dashboard.
+// Sharing カヨ's contact card lives on the home dashboard (not per-senior).
 
 const TZ = "Asia/Tokyo";
 

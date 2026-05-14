@@ -3,12 +3,12 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { SeniorTabs } from "../_components/senior-tabs";
+import { InsightsBuckets } from "../_components/insights-buckets";
 import {
-  InsightsBuckets,
   keyFor,
   type Observation,
   type ObservationEntry,
-} from "../_components/insights-buckets";
+} from "../_components/insights-types";
 
 const TZ = "Asia/Tokyo";
 
