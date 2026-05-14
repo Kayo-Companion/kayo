@@ -33,8 +33,22 @@ export function ContactCardShare() {
     setCanShare(typeof navigator.share === "function");
   }, []);
 
-  const shareUrl = origin ? `${origin}/api/contact-card?name=${encodeURIComponent("カヨ")}` : "";
-  const smsBody = `お話相手AIの「カヨ」の連絡先です。下のリンクをタップして「追加」を押すと、電話帳に登録できます。\n${shareUrl}`;
+  // Share the LANDING PAGE, not the raw .vcf:
+  //   - LINE in-app browser can't trigger Contacts on a raw .vcf
+  //     response but renders a normal HTML page fine.
+  //   - The ?openExternalBrowser=1 param tells LINE to open the URL
+  //     in Safari / Chrome instead of its in-app webview — happy path.
+  //   - The landing page has a big "連絡先に追加する" button that
+  //     navigates to the .vcf, which is where Contacts actually
+  //     hooks in.
+  // Direct .vcf download (the "self" button below) still points at
+  // /api/contact-card so the buyer can grab the file on their own
+  // device without bouncing through the landing page.
+  const landingPath = "/contact?openExternalBrowser=1";
+  const vcfPath = `/api/contact-card?name=${encodeURIComponent("カヨ")}`;
+  const shareUrl = origin ? `${origin}${landingPath}` : "";
+  const vcfUrl = origin ? `${origin}${vcfPath}` : "";
+  const smsBody = `お話相手AIの「カヨ」の連絡先です。下のリンクをタップして「連絡先に追加する」ボタンを押してください。\n${shareUrl}`;
 
   const handleCopy = async () => {
     if (!shareUrl) return;
@@ -91,8 +105,8 @@ export function ContactCardShare() {
             <MessageSquare className="h-3.5 w-3.5" /> SMSで送る
           </Button>
         </a>
-        {shareUrl && (
-          <a href={shareUrl} download="カヨ.vcf" target="_blank" rel="noopener">
+        {vcfUrl && (
+          <a href={vcfUrl} download="カヨ.vcf" target="_blank" rel="noopener">
             <Button variant="secondary" size="sm">
               <Download className="h-3.5 w-3.5" /> 自分の端末で開く
             </Button>
