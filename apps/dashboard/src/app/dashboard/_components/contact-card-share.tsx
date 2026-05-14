@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Download, MessageSquare, Share2 } from "lucide-react";
+import { Check, Download, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
  * Compact share-row attached to the home dashboard's "カヨの電話番号" card.
  *
- * Three thingsthe buyer can do with one click:
- *   - Copy the .vcf link (works anywhere)
- *   - Native Web Share sheet (mobile only — feature-detected so we
- *     don't render a button that throws on desktop)
- *   - Send an SMS with a pre-filled body
+ * Two buttons:
+ *   - シェア          (Web Share API on mobile; on desktop falls back to
+ *                     copying the link to the clipboard so we never
+ *                     render an inert button)
+ *   - 自分の端末で開く (direct .vcf download for the buyer's own phone)
  *
  * "カヨ" is hard-coded as the display name. Per-senior agent_name
  * customisation is deliberately not used here — the goal is to put a
@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
  */
 export function ContactCardShare() {
   const [copied, setCopied] = useState(false);
-  const [canShare, setCanShare] = useState(false);
+  const [canNativeShare, setCanNativeShare] = useState(false);
   const [origin, setOrigin] = useState("");
 
   // Origin must be read client-side so the URL we share is the actual
@@ -30,7 +30,7 @@ export function ContactCardShare() {
   // env var that may be stale across previews.
   useEffect(() => {
     setOrigin(window.location.origin);
-    setCanShare(typeof navigator.share === "function");
+    setCanNativeShare(typeof navigator.share === "function");
   }, []);
 
   // Share the LANDING PAGE, not the raw .vcf:
@@ -48,29 +48,35 @@ export function ContactCardShare() {
   const vcfPath = `/api/contact-card?name=${encodeURIComponent("カヨ")}`;
   const shareUrl = origin ? `${origin}${landingPath}` : "";
   const vcfUrl = origin ? `${origin}${vcfPath}` : "";
-  const smsBody = `お話相手AIの「カヨ」の連絡先です。下のリンクをタップして「連絡先に追加する」ボタンを押してください。\n${shareUrl}`;
 
-  const handleCopy = async () => {
+  /**
+   * One unified "share" affordance:
+   *   - Mobile (Web Share API present): open the native share sheet
+   *     so the buyer can pick LINE / SMS / Mail / copy in one tap.
+   *   - Desktop (no Web Share API): copy the URL to the clipboard so
+   *     the buyer can paste it into whichever app they're already in.
+   */
+  const handleShare = async () => {
     if (!shareUrl) return;
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: "カヨの連絡先",
+          text: "お話相手AI「カヨ」を連絡先に追加してください。",
+          url: shareUrl,
+        });
+      } catch {
+        // User cancelled — no-op.
+      }
+      return;
+    }
+    // Desktop fallback.
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       window.prompt("リンクをコピーしてください:", shareUrl);
-    }
-  };
-
-  const handleNativeShare = async () => {
-    if (typeof navigator.share !== "function") return;
-    try {
-      await navigator.share({
-        title: "カヨの連絡先",
-        text: "お話相手AI「カヨ」を連絡先に追加してください。",
-        url: shareUrl,
-      });
-    } catch {
-      // User cancelled — no-op.
     }
   };
 
@@ -84,27 +90,18 @@ export function ContactCardShare() {
         間違われずに安心してお話しできます。
       </p>
       <div className="flex flex-wrap gap-2 pt-1">
-        <Button variant="primary" size="sm" onClick={handleCopy}>
+        <Button variant="primary" size="sm" onClick={handleShare}>
           {copied ? (
             <>
               <Check className="h-3.5 w-3.5" /> コピーしました
             </>
           ) : (
             <>
-              <Copy className="h-3.5 w-3.5" /> リンクをコピー
+              <Share2 className="h-3.5 w-3.5" />{" "}
+              {canNativeShare ? "シェア" : "リンクをコピー"}
             </>
           )}
         </Button>
-        {canShare && (
-          <Button variant="secondary" size="sm" onClick={handleNativeShare}>
-            <Share2 className="h-3.5 w-3.5" /> シェア
-          </Button>
-        )}
-        <a href={`sms:?body=${encodeURIComponent(smsBody)}`}>
-          <Button variant="secondary" size="sm">
-            <MessageSquare className="h-3.5 w-3.5" /> SMSで送る
-          </Button>
-        </a>
         {vcfUrl && (
           <a href={vcfUrl} download="カヨ.vcf" target="_blank" rel="noopener">
             <Button variant="secondary" size="sm">
