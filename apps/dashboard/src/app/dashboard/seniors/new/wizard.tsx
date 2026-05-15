@@ -119,7 +119,17 @@ function SeniorForm({
         setSubmitting(false);
         return;
       }
-      router.push("/dashboard");
+      // Pass ?welcome=<senior_id> so the dashboard opens the
+      // new-senior welcome modal (phone-number + share template).
+      // Server returns { senior: { id, ... } } on success; fall back
+      // to a bare /dashboard if the id field is missing for some
+      // reason (older API revisions).
+      const newSeniorId =
+        body?.senior?.id ?? body?.id ?? body?.seniorId ?? null;
+      const target = newSeniorId
+        ? `/dashboard?welcome=${encodeURIComponent(newSeniorId)}`
+        : "/dashboard";
+      router.push(target);
       router.refresh();
     } catch {
       setError("通信エラーが発生しました。");

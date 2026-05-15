@@ -12,10 +12,12 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { SafetyReminderModal } from "./_components/safety-reminder-modal";
 import { KayoCallWarningModal } from "./_components/kayo-call-warning-modal";
 import { ContactCardShare } from "./_components/contact-card-share";
+import { NewSeniorWelcomeModal } from "./_components/new-senior-welcome-modal";
 
 interface Family {
   id: string;
@@ -51,9 +53,54 @@ interface Props {
 }
 
 export function DashboardClient({ family, seniors }: Props) {
-  const kayoPhone = formatPhoneForDisplay(
-    process.env.NEXT_PUBLIC_KAYO_PHONE_NUMBER ?? ""
-  );
+  const kayoPhoneRaw = process.env.NEXT_PUBLIC_KAYO_PHONE_NUMBER ?? "";
+  const kayoPhone = formatPhoneForDisplay(kayoPhoneRaw);
+
+  // New-senior welcome modal: opens when the URL has ?welcome=<senior_id>
+  // (set by the signup / add-senior flows on success) and that senior
+  // hasn't been welcomed before (per-id localStorage flag).
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const welcomeParam = searchParams.get("welcome");
+  const [welcomeSenior, setWelcomeSenior] = useState<Senior | null>(null);
+
+  useEffect(() => {
+    if (!welcomeParam) return;
+    const target = seniors.find((s) => s.id === welcomeParam);
+    if (!target) return;
+    let alreadyShown = false;
+    try {
+      alreadyShown = !!window.localStorage.getItem(
+        `kayo:welcome-shown:${target.id}`
+      );
+    } catch {
+      // localStorage blocked; default to "not shown" so the buyer at
+      // least sees it once on this device.
+    }
+    if (!alreadyShown) setWelcomeSenior(target);
+  }, [welcomeParam, seniors]);
+
+  const closeWelcome = () => {
+    if (welcomeSenior) {
+      try {
+        window.localStorage.setItem(
+          `kayo:welcome-shown:${welcomeSenior.id}`,
+          "1"
+        );
+      } catch {
+        // ignore
+      }
+    }
+    setWelcomeSenior(null);
+    // Strip the ?welcome= param so a page refresh won't re-show.
+    if (welcomeParam) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("welcome");
+      const qs = params.toString();
+      router.replace(`/dashboard${qs ? `?${qs}` : ""}`);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-cream py-12 md:py-16">
       <SafetyReminderModal
@@ -63,6 +110,11 @@ export function DashboardClient({ family, seniors }: Props) {
           schedule: s.schedule,
         }))}
         kayoPhone={kayoPhone}
+      />
+      <NewSeniorWelcomeModal
+        senior={welcomeSenior}
+        kayoPhone={kayoPhoneRaw}
+        onClose={closeWelcome}
       />
       <div className="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between">
@@ -247,8 +299,14 @@ function SeniorCard({ senior }: { senior: Senior }) {
     <Link
       href={`/dashboard/seniors/${senior.id}`}
       className="group block"
+      aria-label={`${senior.name}さんのダッシュボードを開く`}
     >
-      <GlassCard className="p-6 transition-all group-hover:-translate-y-0.5 group-hover:border-coral/40">
+      {/* Stronger clickable affordances:
+          - explicit "詳細を見る →" call-to-action pill on the right
+          - cursor-pointer + bigger lift on hover
+          - the chevron now lives inside a coral-tinted circle that
+            scales on hover, so the click target reads as a button. */}
+      <GlassCard className="cursor-pointer p-6 transition-all group-hover:-translate-y-1 group-hover:border-coral/60 group-hover:shadow-lg group-hover:shadow-coral/15">
         <div className="flex items-center gap-4">
           <div className="flex-1 space-y-1">
             <div className="font-serif text-xl font-medium text-warm-brown">
@@ -276,7 +334,17 @@ function SeniorCard({ senior }: { senior: Senior }) {
               )}
             </div>
           </div>
-          <ChevronRight className="h-5 w-5 shrink-0 text-warm-gray transition-colors group-hover:text-coral" />
+          {/* Action affordance — explicit text + iconized button so it
+              clearly reads "this row is clickable, here's where to tap". */}
+          <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-coral transition-colors">
+            <span className="hidden sm:inline">詳細を見る</span>
+            <span
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-coral to-warm-orange text-white shadow-md shadow-coral/30 transition-transform group-hover:scale-110"
+              aria-hidden
+            >
+              <ChevronRight className="h-5 w-5" strokeWidth={2.5} />
+            </span>
+          </div>
         </div>
       </GlassCard>
     </Link>

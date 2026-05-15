@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { UserPlus } from "lucide-react";
+import { UserPlus, ChevronDown, Smartphone } from "lucide-react";
 import { InAppBrowserNotice } from "./_components/in-app-browser-notice";
 
 /**
@@ -63,10 +63,39 @@ export default function ContactLandingPage() {
             📲 連絡先に追加する
           </a>
 
+          {/* Cross-platform post-tap guidance + the iOS-specific Quick
+              Look trap (left-top "✓ 完了" looks like Save but isn't). */}
+          <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-4 text-left">
+            <div className="flex items-center gap-2 text-sm font-semibold text-warm-brown">
+              <Smartphone className="h-4 w-4 text-amber-600" /> ボタンを押した後
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-warm-brown/90">
+              連絡先の画面が表示されたら、
+              <strong className="text-coral">「新規連絡先を作成」</strong>
+              または
+              <strong className="text-coral">「保存」</strong>
+              をタップしてください。
+            </p>
+
+            {/* iPhone-specific warning. iOS Safari opens a Quick Look
+                preview where the top-left ✓ is "Done" (close), not
+                "Save" — this has tripped up every iOS tester. */}
+            <div className="mt-3 rounded-xl border border-coral/40 bg-rose-50/80 p-3">
+              <div className="text-[11px] font-semibold text-coral">
+                ⚠️ iPhoneをお使いの方へ
+              </div>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-warm-brown/85">
+                左上の <strong>「✓ 完了」</strong> を押すだけだと保存されません。
+                画面を <ChevronDown className="inline h-3 w-3 text-coral" />
+                下にスクロールして、
+                <strong>「新規連絡先を作成」</strong>
+                を押してください。
+              </p>
+            </div>
+          </div>
+
           <p className="text-xs leading-relaxed text-warm-gray">
-            ボタンを押すと、「カヨ」と電話番号がお電話帳に追加されます。
-            <br />
-            これでカヨから電話が来た時、「カヨ」と表示されます。
+            登録が完了すると、カヨから電話が来た時に「カヨ」と表示されます。
           </p>
 
           <InAppBrowserNotice />

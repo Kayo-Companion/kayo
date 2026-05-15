@@ -111,8 +111,16 @@ export default async function CheckoutReturnPage({
   //    the buyer lands. Idempotent. We do this BEFORE signInWithPassword so
   //    if it fails we still redirect to fallback (the user gets a clearer
   //    "something's wrong" path than landing on an empty dashboard).
-  await selfHealProvisioning(admin, stripe, userId, sub).catch((e) => {
+  // Capture the senior id so we can deep-link the dashboard to its
+  // new-senior welcome modal.
+  const provisioned = await selfHealProvisioning(
+    admin,
+    stripe,
+    userId,
+    sub
+  ).catch((e) => {
     console.error("return: self-heal failed (non-fatal):", e);
+    return {} as { seniorId?: string };
   });
 
   // 3. Sign in via the cookie-writing server client. No SMS, no Twilio.
@@ -136,7 +144,15 @@ export default async function CheckoutReturnPage({
       console.error("return: password rotate failed:", err);
     });
 
-  redirect("/dashboard");
+  // Surface the welcome modal for the senior we just provisioned (if
+  // any). Falls back to a bare /dashboard when self-heal didn't yield
+  // an id (e.g. webhook already created the senior — modal will fire
+  // off the wizard add-flow next time anyway).
+  redirect(
+    provisioned?.seniorId
+      ? `/dashboard?welcome=${encodeURIComponent(provisioned.seniorId)}`
+      : "/dashboard"
+  );
 }
 
 /**
@@ -149,7 +165,7 @@ async function selfHealProvisioning(
   stripe: ReturnType<typeof getStripe>,
   userId: string,
   sub: Stripe.Subscription
-) {
+): Promise<{ seniorId?: string }> {
   const md = sub.metadata ?? {};
 
   // --- families ---
@@ -184,23 +200,23 @@ async function selfHealProvisioning(
       .single();
     if (error || !family) {
       console.error("self-heal families upsert failed:", error);
-      return;
+      return {};
     }
     familyId = family.id;
   }
 
-  if (!familyId) return;
+  if (!familyId) return {};
 
   // --- seniors --- guarded by phone match so we never duplicate.
   const recipientPhone = md.recipient_phone;
-  if (!recipientPhone) return;
+  if (!recipientPhone) return {};
   const { data: existingSenior } = await admin
     .from("seniors")
     .select("id")
     .eq("family_id", familyId)
     .eq("phone", recipientPhone)
     .maybeSingle();
-  if (existingSenior) return;
+  if (existingSenior) return { seniorId: existingSenior.id };
 
   let schedule: unknown[] = [];
   try {
@@ -242,7 +258,7 @@ async function selfHealProvisioning(
   }
   if (senErr || !senior) {
     console.error("self-heal seniors insert failed:", senErr);
-    return;
+    return {};
   }
 
   // Stamp back to Stripe metadata so future renewal/cancel events find it.
@@ -253,4 +269,6 @@ async function selfHealProvisioning(
   } catch (e) {
     console.error("self-heal: stripe metadata stamp failed:", e);
   }
+
+  return { seniorId: senior.id };
 }
