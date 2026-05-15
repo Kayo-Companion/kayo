@@ -6,9 +6,9 @@ import { GlassCard } from "@/components/ui/glass-card";
 import { SeniorTabs } from "./_components/senior-tabs";
 import { ActivityBars, type DayCalls } from "./_components/activity-bars";
 import { CallNowButton } from "./_components/call-now-button";
-// Observations now live on their own /insights tab (traffic-light buckets).
-// The old flat-list card is no longer rendered on the main dashboard.
-// Sharing カヨ's contact card lives on the home dashboard (not per-senior).
+// 気づき (observations) tab was removed — the menu-driven 認知機能チェック
+// (HDS-R) replaces it as the family-facing cognitive signal, and the old
+// observation extractor's accuracy didn't justify the per-call OpenAI cost.
 
 const TZ = "Asia/Tokyo";
 
@@ -104,8 +104,8 @@ export default async function SeniorDashboardPage({
         </GlassCard>
 
         <p className="rounded-2xl border border-rose-300/40 bg-white/60 p-4 text-sm text-warm-brown/80">
-          {senior.name}さんとの会話から見つかった気づきは、
-          上のタブ <strong className="text-warm-brown">「気づき」</strong>
+          {senior.name}さんの認知機能チェック（脳トレ）の結果は、
+          上のタブ <strong className="text-warm-brown">「認知機能チェック」</strong>
           にまとめています。
         </p>
       </div>
