@@ -46,6 +46,9 @@ class DB(Protocol):
     async def save_observations(
         self, call_id: str, observations: list[dict[str, Any]]
     ) -> None: ...
+    async def save_activity_results(
+        self, call_id: str, activity_results: list[dict[str, Any]]
+    ) -> None: ...
     async def save_recording_url(self, call_id: str, url: str) -> None: ...
     async def get_recent_summaries(self, senior_id: str, limit: int = 5) -> list[str]: ...
     async def append_long_term_facts(
@@ -203,6 +206,24 @@ class SupabaseDB:
             if "observations" in str(exc):
                 logger.warning(
                     "observations column missing; skipping (run migration 008)"
+                )
+                return
+            raise
+
+    async def save_activity_results(
+        self, call_id: str, activity_results: list[dict[str, Any]]
+    ) -> None:
+        """Persist the per-call activity outcomes (quiz, shiritori, HDS-R)
+        as a JSONB array on the calls row. Silently no-ops if the column
+        isn't migrated yet (e.g. older deployments running pre-011)."""
+        try:
+            await self._client.table("calls").update(
+                {"activity_results": activity_results}
+            ).eq("id", call_id).execute()
+        except Exception as exc:
+            if "activity_results" in str(exc):
+                logger.warning(
+                    "activity_results column missing; skipping (run migration 011)"
                 )
                 return
             raise
@@ -427,6 +448,12 @@ class InMemoryDB:
     ) -> None:
         # In-memory fallback for local dev — discard. Real persistence
         # happens in SupabaseDB.
+        return
+
+    async def save_activity_results(
+        self, call_id: str, activity_results: list[dict[str, Any]]
+    ) -> None:
+        # In-memory fallback — discard.
         return
 
     async def save_recording_url(self, call_id: str, url: str) -> None:

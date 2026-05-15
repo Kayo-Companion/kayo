@@ -26,6 +26,11 @@ export function SeniorTabs({ seniorId }: { seniorId: string }) {
       isActive: pathname.startsWith(`${base}/insights`),
     },
     {
+      href: `${base}/activities`,
+      label: "アクティビティ",
+      isActive: pathname.startsWith(`${base}/activities`),
+    },
+    {
       href: `${base}/settings`,
       label: "設定",
       isActive: pathname.startsWith(`${base}/settings`),

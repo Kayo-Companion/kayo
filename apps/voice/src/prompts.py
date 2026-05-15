@@ -29,7 +29,7 @@ from datetime import datetime
 
 import pytz
 
-from . import prompts_mini, prompts_realtime2, prompts_smart
+from . import prompts_menu, prompts_mini, prompts_realtime2, prompts_smart
 from .config import get_settings
 from .models import ScheduleEntry, Senior
 
@@ -106,6 +106,7 @@ def _format_schedule(schedule: list[ScheduleEntry]) -> str:
 # Valid values for KAYO_PROMPT_VARIANT.
 PROMPT_VARIANT_COMPANION = "companion"
 PROMPT_VARIANT_SMART = "smart"
+PROMPT_VARIANT_MENU = "menu"
 
 
 def _is_mini(model: str | None) -> bool:
@@ -119,18 +120,23 @@ def _variant() -> str:
     raw = (get_settings().kayo_prompt_variant or "").strip().lower()
     if raw == PROMPT_VARIANT_SMART:
         return PROMPT_VARIANT_SMART
+    if raw == PROMPT_VARIANT_MENU:
+        return PROMPT_VARIANT_MENU
     return PROMPT_VARIANT_COMPANION
 
 
 def _prompt_module(model: str | None):
-    """Pick which prompt module (mini / realtime2 / smart) to use.
+    """Pick which prompt module (mini / realtime2 / smart / menu) to use.
 
-    Variant overrides model selection — smart variant uses prompts_smart
-    on ANY model. Within the companion variant, model picks between the
-    mini-tuned and realtime-2-tuned companion prompts.
+    Variant overrides model selection — smart and menu variants override
+    the model-based selection. Within the companion variant, model picks
+    between the mini-tuned and realtime-2-tuned companion prompts.
     """
-    if _variant() == PROMPT_VARIANT_SMART:
+    v = _variant()
+    if v == PROMPT_VARIANT_SMART:
         return prompts_smart
+    if v == PROMPT_VARIANT_MENU:
+        return prompts_menu
     return prompts_mini if _is_mini(model) else prompts_realtime2
 
 
@@ -204,6 +210,13 @@ def build_kayo_prompt(
 
     next_call = _next_call_phrase(senior.schedule, senior.call_timezone)
 
+    # Menu variant requires two extra format args (quiz categories +
+    # HDS-R protocol). Other variants ignore them.
+    extra: dict[str, str] = {}
+    if _variant() == PROMPT_VARIANT_MENU:
+        extra["quiz_categories"] = prompts_menu.format_quiz_categories()
+        extra["hdsr_protocol"] = prompts_menu.format_hdsr_protocol()
+
     return _system_template(model).format(
         agent_name=_agent_name(senior),
         user_name=senior.name,
@@ -211,6 +224,7 @@ def build_kayo_prompt(
         long_term_facts=long_term_facts_block,
         past_conversations_summary=recent_calls_block,
         next_call_phrase=next_call,
+        **extra,
     )
 
 
@@ -223,15 +237,27 @@ _DISCLAIMER = (
 )
 
 
+_MENU_OFFER = (
+    "今日は何しよっか？"
+    "いつものおしゃべりでもいいし、"
+    "クイズやしりとりして遊ぶのもできるよ。"
+    "脳トレもあるよ〜。"
+)
+
+
 def build_opening_script(senior: Senior, past_summaries: list[str] | None) -> str:
     """The actual greeting line the agent says verbatim.
 
     Shared across models — this is business logic, not model tuning.
     First call gets the full disclaimer + introduction; subsequent calls
     get a shorter friendlier opener.
+
+    Menu variant ends with the activity offer so Kayo immediately gives
+    the senior a choice. Other variants end with an open-ended question.
     """
     is_first_call = not (past_summaries or [])
     agent = _agent_name(senior)
+    is_menu = _variant() == PROMPT_VARIANT_MENU
 
     if senior.is_self:
         prefix = f"もしもし、お話相手の{agent}です。{_DISCLAIMER}"
@@ -245,15 +271,17 @@ def build_opening_script(senior: Senior, past_summaries: list[str] | None) -> st
         )
 
     if is_first_call:
+        ending = _MENU_OFFER if is_menu else "最近、何かハマっていることはありますか？"
         return (
             f"{prefix}"
             f"{senior.name}さん、初めまして。"
-            f"最近、何かハマっていることはありますか？"
+            f"{ending}"
         )
-    return (
-        f"もしもし、お話相手の{agent}です。"
-        f"{senior.name}さん、こんにちは。今日は何について話しましょうか？"
-    )
+
+    short_prefix = f"もしもし、お話相手の{agent}です。{senior.name}さん、こんにちは。"
+    if is_menu:
+        return f"{short_prefix}{_MENU_OFFER}"
+    return f"{short_prefix}今日は何について話しましょうか？"
 
 
 def build_opening_instructions(full_script: str, model: str | None = None) -> str:

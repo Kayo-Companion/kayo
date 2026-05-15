@@ -177,4 +177,29 @@ async def summarize_and_persist(
     except Exception:
         logger.exception("Failed to extract observations for call %s", call_id)
 
+    # Detect and score per-call activities (会話 / クイズ / しりとり / 脳トレ).
+    # Best-effort — failures here never block the call from finalizing.
+    # Only meaningful when KAYO_PROMPT_VARIANT=menu is active; for other
+    # variants this almost always returns just [{"type":"conversation"}].
+    try:
+        from datetime import datetime, UTC
+        from .activity_scoring import extract_activities
+
+        activity_results = await extract_activities(
+            transcript,
+            agent_name=agent_name,
+            call_date=datetime.now(UTC),
+        )
+        if activity_results:
+            await db.save_activity_results(
+                call_id=call_id, activity_results=activity_results
+            )
+            types = ",".join(a.get("type", "?") for a in activity_results)
+            logger.info(
+                "Saved %d activity result(s) for call %s: %s",
+                len(activity_results), call_id, types,
+            )
+    except Exception:
+        logger.exception("Failed to extract activities for call %s", call_id)
+
     return summary
