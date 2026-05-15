@@ -27,7 +27,7 @@ export function SeniorTabs({ seniorId }: { seniorId: string }) {
     },
     {
       href: `${base}/activities`,
-      label: "アクティビティ",
+      label: "認知機能チェック",
       isActive: pathname.startsWith(`${base}/activities`),
     },
     {

@@ -129,6 +129,50 @@ def compute_cost_usd(usage: dict[str, int], model: str | None = None) -> float:
 # done). semantic_vad (any eagerness) is supposed to filter these out at the
 # server, but it's unreliable on phone audio, so we belt-and-suspenders it
 # here.
+# Unicode-block ranges of scripts that have no business showing up in a
+# Japanese phone call. gpt-4o-transcribe hallucinates these on silence/
+# noise; treat any transcript with characters in these ranges as garbage.
+# Hiragana / katakana / kanji / ASCII / basic punctuation are all allowed.
+_FOREIGN_SCRIPT_RANGES = (
+    (0x0370, 0x03FF),   # Greek
+    (0x0400, 0x04FF),   # Cyrillic
+    (0x0500, 0x052F),   # Cyrillic Supplement
+    (0x0530, 0x058F),   # Armenian
+    (0x0590, 0x05FF),   # Hebrew
+    (0x0600, 0x06FF),   # Arabic
+    (0x0900, 0x097F),   # Devanagari
+    (0x0E00, 0x0E7F),   # Thai
+    (0x10A0, 0x10FF),   # Georgian
+    (0x1100, 0x11FF),   # Hangul Jamo
+    (0xAC00, 0xD7AF),   # Hangul syllables
+)
+
+
+def _is_foreign_script(text: str) -> bool:
+    """True if more than 20% of the characters are in non-JP scripts.
+
+    Tolerates the odd stray character (e.g. an emoji mid-transcript) but
+    catches obvious whole-utterance hallucinations like
+    "მოლიჟე, ნარტე..." that we've seen on silent inputs.
+    """
+    if not text:
+        return False
+    foreign = 0
+    counted = 0
+    for ch in text:
+        cp = ord(ch)
+        # Skip ASCII letters/digits/punctuation and whitespace from the count
+        # so a single English word in an otherwise-JP sentence doesn't trip it.
+        if cp < 0x80 or ch.isspace():
+            continue
+        counted += 1
+        for lo, hi in _FOREIGN_SCRIPT_RANGES:
+            if lo <= cp <= hi:
+                foreign += 1
+                break
+    return counted > 0 and foreign / counted > 0.2
+
+
 BACKCHANNEL_PATTERNS = {
     "うん", "うんうん", "うーん", "んー", "んん", "うんと", "うーんと",
     "はい", "はいはい",
@@ -583,6 +627,17 @@ class CallBridge:
 
                 elif etype == "conversation.item.input_audio_transcription.completed":
                     text = msg.get("transcript", "")
+                    # ASR hallucination filter — gpt-4o-transcribe sometimes
+                    # returns text in scripts that have no business in a JP
+                    # call (Georgian, Greek, Arabic, Cyrillic, etc.) when the
+                    # input is silence or noise. Skip those: they're never
+                    # real user input and feeding them into the model wastes
+                    # tokens + confuses Kayo (she tries to respond to gibberish).
+                    if text and _is_foreign_script(text):
+                        logger.warning(
+                            "ASR returned non-Japanese script, ignoring: %r", text
+                        )
+                        text = ""
                     if text:
                         logger.info("User said: %s", text)
                         self.transcript.append({"role": "user", "text": text})

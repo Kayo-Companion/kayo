@@ -177,27 +177,28 @@ async def summarize_and_persist(
     except Exception:
         logger.exception("Failed to extract observations for call %s", call_id)
 
-    # Detect and score per-call activities (会話 / クイズ / しりとり / 脳トレ).
+    # Detect and score per-call brain-training (HDS-R) sessions.
     # Best-effort — failures here never block the call from finalizing.
-    # Only meaningful when KAYO_PROMPT_VARIANT=menu is active; for other
-    # variants this almost always returns just [{"type":"conversation"}].
+    # We deliberately only persist `brain_training` entries: the dashboard
+    # cares about cognitive-screening scores over time, not bar charts of
+    # how often the senior chose chat vs quiz vs shiritori.
     try:
         from datetime import datetime, UTC
         from .activity_scoring import extract_activities
 
-        activity_results = await extract_activities(
+        all_results = await extract_activities(
             transcript,
             agent_name=agent_name,
             call_date=datetime.now(UTC),
         )
-        if activity_results:
+        brain_results = [a for a in all_results if a.get("type") == "brain_training"]
+        if brain_results:
             await db.save_activity_results(
-                call_id=call_id, activity_results=activity_results
+                call_id=call_id, activity_results=brain_results
             )
-            types = ",".join(a.get("type", "?") for a in activity_results)
             logger.info(
-                "Saved %d activity result(s) for call %s: %s",
-                len(activity_results), call_id, types,
+                "Saved %d brain_training result(s) for call %s (skipped %d non-HDSR entries)",
+                len(brain_results), call_id, len(all_results) - len(brain_results),
             )
     except Exception:
         logger.exception("Failed to extract activities for call %s", call_id)
