@@ -136,13 +136,15 @@ BACKCHANNEL_PATTERNS = {
     "そう", "そうそう", "そっか", "そうですね", "そうね", "そうだね",
     "そうよね", "そうかも", "そうかな", "そうですか",
     "へぇ", "へえ", "へー",
-    "あぁ", "ああ", "あー", "あーあ",
+    "あ", "あぁ", "ああ", "あー", "あーあ",  # single-char "あ" comes up a lot as a thinking pause
     "あら", "あらー",
     "なるほど",
     "ふむ", "ふん",
     "おー", "おお",
     "まあ", "まぁ",
     "ふーん",
+    "本当", "本当に", "ほんと", "ほんとに", "ほんとう",
+    "そうかぁ", "そっかぁ",
     # Hesitation / vague non-answers — treat as backchannel so we don't
     # bombard the senior with more content when they're stalling.
     "どうだろう", "どうかな", "どうかしら", "なんだろう",
@@ -526,12 +528,15 @@ class CallBridge:
                                                 },
                                                 "turn_detection": {
                                                     "type": "semantic_vad",
-                                                    # `medium` commits after ~0.5-1s of silence
-                                                    # (vs. ~1.5-2s for `low`). On phone audio
-                                                    # this saves ~1s per turn — meaningful for
-                                                    # conversational feel — without becoming
-                                                    # aggressive enough to chop user speech.
-                                                    "eagerness": "medium",
+                                                    # `low` waits ~1.5-2s of silence before
+                                                    # committing (vs. ~0.5-1s for `medium`).
+                                                    # Trading per-turn snappiness for fewer
+                                                    # mid-thought commits — seniors often
+                                                    # pause to think, and committing too eagerly
+                                                    # split "やっぱり孫の顔見るのが楽しいのかな
+                                                    # …あ…本当に…" into 3 separate turns and
+                                                    # made Kayo cut in on each one.
+                                                    "eagerness": "low",
                                                     # IMPORTANT: server-side interrupt is OFF.
                                                     # If true, the server cancels Kayo's
                                                     # response on ANY detected user audio —
@@ -686,14 +691,17 @@ class CallBridge:
                         and self._last_response_done_at is not None
                         and (now - self._last_response_done_at) < 3.0
                     )
-                    # Default patience for normal turns: 0.6s so that
-                    # trailing hesitations like "そうだね…えー" don't get
-                    # split into two committed turns where the second
-                    # triggers a barge-in. If user keeps talking within
-                    # that window, the new transcription cancels the
-                    # pending response and reschedules with combined
-                    # context. 0.6s is short enough to not feel sluggish.
-                    patience_s = 1.0 if is_post_interrupt else 0.6
+                    # Patience for normal turns: 1.0s so that trailing
+                    # hesitations like "そうだね…えー" / "孫の顔…あ…本当に"
+                    # don't trigger an early AI response when the user
+                    # was just pausing to think. If a new transcription
+                    # arrives within the window, the pending response
+                    # is cancelled and rescheduled with combined context.
+                    # Tuned alongside semantic_vad eagerness=low so the
+                    # commit itself already takes ~1.5-2s of silence —
+                    # adding 1s of bridge-side patience on top covers
+                    # cases where VAD still committed eagerly.
+                    patience_s = 1.5 if is_post_interrupt else 1.0
 
                     if not self._greeting_done:
                         pass
