@@ -126,9 +126,9 @@ def compute_cost_usd(usage: dict[str, int], model: str | None = None) -> float:
 # Japanese 相槌 (back-channel) acknowledgments. When the user says one of
 # these mid- or post-Kayo-turn we should NOT treat it as a request for a new
 # response — Kayo should just keep going (or stay silent if she's already
-# done). semantic_vad with eagerness=low is also supposed to filter these
-# out at the server, but it's unreliable on phone audio, so we belt-and-
-# suspenders it here.
+# done). semantic_vad (any eagerness) is supposed to filter these out at the
+# server, but it's unreliable on phone audio, so we belt-and-suspenders it
+# here.
 BACKCHANNEL_PATTERNS = {
     "うん", "うんうん", "うーん", "んー", "んん", "うんと", "うーんと",
     "はい", "はいはい",
@@ -286,9 +286,15 @@ async def configure_session(
                     },
                     "turn_detection": {
                         # semantic_vad waits for a complete utterance instead
-                        # of just silence. eagerness=low = most patient.
+                        # of just silence. eagerness=medium is the balanced
+                        # setting — ~1-2s of silence before committing.
+                        # We previously used "low" (~2-3s) but that made
+                        # responses feel sluggish for normal-tempo speakers.
+                        # The transcript handler still ignores backchannel
+                        # 相槌 ("はい", "うん") so brief filler doesn't cut
+                        # Kayo off mid-thought.
                         "type": "semantic_vad",
-                        "eagerness": "low",
+                        "eagerness": "medium",
                         # During the greeting, block both: (a) interruption of
                         # Kayo by background audio, and (b) auto-creating a
                         # new response when iOS screening AI talks. After the
@@ -528,15 +534,18 @@ class CallBridge:
                                                 },
                                                 "turn_detection": {
                                                     "type": "semantic_vad",
-                                                    # `low` waits ~1.5-2s of silence before
-                                                    # committing (vs. ~0.5-1s for `medium`).
-                                                    # Trading per-turn snappiness for fewer
-                                                    # mid-thought commits — seniors often
-                                                    # pause to think, and committing too eagerly
-                                                    # split "やっぱり孫の顔見るのが楽しいのかな
-                                                    # …あ…本当に…" into 3 separate turns and
-                                                    # made Kayo cut in on each one.
-                                                    "eagerness": "low",
+                                                    # `medium` waits ~0.5-1s of silence before
+                                                    # committing. We previously used `low`
+                                                    # (~1.5-2s) but normal-tempo speakers found
+                                                    # Kayo's response gap too long. The
+                                                    # transcription handler filters short
+                                                    # 相槌 ("はい", "うん") separately so brief
+                                                    # filler still doesn't cut Kayo off, but
+                                                    # the longer pauses ("えーと…")
+                                                    # historically protected by `low` may now
+                                                    # occasionally split — acceptable trade-off
+                                                    # for the speed improvement.
+                                                    "eagerness": "medium",
                                                     # IMPORTANT: server-side interrupt is OFF.
                                                     # If true, the server cancels Kayo's
                                                     # response on ANY detected user audio —
@@ -697,7 +706,7 @@ class CallBridge:
                     # was just pausing to think. If a new transcription
                     # arrives within the window, the pending response
                     # is cancelled and rescheduled with combined context.
-                    # Tuned alongside semantic_vad eagerness=low so the
+                    # Tuned alongside semantic_vad eagerness=medium so the
                     # commit itself already takes ~1.5-2s of silence —
                     # adding 1s of bridge-side patience on top covers
                     # cases where VAD still committed eagerly.
