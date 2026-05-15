@@ -54,6 +54,10 @@ class Senior(BaseModel):
     introducer_name: str | None = None
     introducer_relationship: str | None = None
     health_notes: str | None = None  # free-text "話したいこと"
+    # Gregorian birth year (4 digits, e.g. 1948). Captured at signup,
+    # used to age-stratify HDS-R scoring and verify the senior's spoken
+    # age in Q1. Nullable for older rows pre-migration 010.
+    birth_year: int | None = None
     is_active: bool = True
     # Custom AI-agent name; None = fall back to the product default (カヨ).
     agent_name: str | None = None

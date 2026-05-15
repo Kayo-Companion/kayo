@@ -30,6 +30,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .config import get_settings
 from .hdsr import TOTAL_MAX_SCORE, build_protocol, interpret_score
+from .models import Senior
 from .quizzes import CATEGORY_LABELS_JP
 
 logger = logging.getLogger(__name__)
@@ -101,15 +102,50 @@ async def detect_segments(
 # HDS-R scoring
 # --------------------------------------------------------------------------
 
-def _build_hdsr_scoring_prompt(call_date: datetime) -> str:
+def _build_hdsr_scoring_prompt(
+    call_date_local: datetime,
+    senior: Senior | None = None,
+) -> str:
     """Compose the system prompt for HDS-R scoring. We inline the protocol
     + rubric so the scoring model knows exactly which question maps to
-    which response."""
+    which response.
+
+    `call_date_local` MUST already be in the senior's local timezone
+    (typically Asia/Tokyo) so the date comparison for Q2 is correct.
+    Otherwise calls placed in the morning JST get scored against the
+    previous UTC date.
+
+    `senior` (optional) is used to:
+      - Q1: verify the spoken age against (current_year - birth_year)
+      - Q3: nothing strict — see rubric.
+    """
     protocol = build_protocol(set_index=0)
+
+    # Compute the senior's age from birth_year if available. Approximation
+    # only (we don't track birthday day-of-year), so ±1 year noise is fine.
+    expected_age_phrase = "（実年齢不明 — 数値として明確に答えていれば verified=true、その上で 1 点としてください）"
+    if senior and senior.birth_year:
+        approx_age = call_date_local.year - senior.birth_year
+        expected_age_phrase = (
+            f"実年齢: {approx_age}歳前後（誕生日次第で {approx_age - 1}〜{approx_age} 歳）。"
+            f"発話された年齢が {approx_age - 2}〜{approx_age + 2} 歳の範囲なら 1 点。"
+            f"範囲外でも数値として答えていれば verified=true（ただし score=0）。"
+        )
+
     lines = [
         "あなたは改訂長谷川式簡易知能評価スケール（HDS-R）の採点者です。",
         "通話の transcript から、HDS-R 9問に対する回答を抽出して採点してください。",
-        f"通話日: {call_date.strftime('%Y年%m月%d日')}（{['月','火','水','木','金','土','日'][call_date.weekday()]}曜日）",
+        f"通話日（本人の現地時刻・日本時間基準）: "
+        f"{call_date_local.strftime('%Y年%m月%d日')}"
+        f"（{['月','火','水','木','金','土','日'][call_date_local.weekday()]}曜日）",
+        "",
+        "# 本人情報（採点の根拠データ）",
+        f"問1 年齢の答え合わせ: {expected_age_phrase}",
+        "問3 場所の答え合わせ: ご本人は通話を自宅（または高齢者施設）で受けている前提。",
+        "  - 「自宅」「家」「ここ」「自分の部屋」「うち」「居間」「リビング」など、",
+        "    自分の住居を指す表現なら 2 点（verified=true）。",
+        "  - 都道府県・市区町村名（例：「東京都にいます」）のような場所を答えた場合は 1 点（verified=true）。",
+        "  - 「今は」「えーと」「分からない」「無回答」は 0 点（verified=false）。",
         "",
         "# 厳格な採点ルール（最重要）",
         "",
@@ -162,10 +198,16 @@ def _build_hdsr_scoring_prompt(call_date: datetime) -> str:
 async def score_hdsr(
     transcript: list[dict[str, Any]],
     agent_name: str,
-    call_date: datetime,
+    call_date_local: datetime,
+    senior: Senior | None = None,
 ) -> dict[str, Any] | None:
     """Score an HDS-R session from the transcript. Returns the score dict
-    or None if the transcript doesn't contain a recognizable session."""
+    or None if the transcript doesn't contain a recognizable session.
+
+    `call_date_local` MUST be in the senior's local timezone (Asia/Tokyo
+    for all current users). `senior` provides birth_year for Q1 age
+    verification.
+    """
     convo = _format_transcript(transcript, agent_name)
     settings = get_settings()
     client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -174,7 +216,7 @@ async def score_hdsr(
         model="gpt-4o-mini",
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": _build_hdsr_scoring_prompt(call_date)},
+            {"role": "system", "content": _build_hdsr_scoring_prompt(call_date_local, senior)},
             {"role": "user", "content": convo},
         ],
         temperature=0.0,
@@ -326,10 +368,16 @@ async def score_shiritori(
 async def extract_activities(
     transcript: list[dict[str, Any]],
     agent_name: str,
-    call_date: datetime,
+    call_date_local: datetime,
+    senior: Senior | None = None,
 ) -> list[dict[str, Any]]:
     """Detect and score all activities present in a call. Returns a list
-    suitable for jsonb storage in calls.activity_results."""
+    suitable for jsonb storage in calls.activity_results.
+
+    `call_date_local` is the call date in the senior's local timezone
+    (used for Q2 date-orientation scoring). `senior` provides
+    personalization context for scoring (e.g. birth_year for Q1).
+    """
     segments = await detect_segments(transcript, agent_name)
     if not segments:
         return []
@@ -339,7 +387,7 @@ async def extract_activities(
         activity = seg.get("activity")
         try:
             if activity == "brain_training":
-                scored = await score_hdsr(transcript, agent_name, call_date)
+                scored = await score_hdsr(transcript, agent_name, call_date_local, senior)
                 if scored:
                     results.append(scored)
             elif activity == "quiz":

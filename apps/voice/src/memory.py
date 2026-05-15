@@ -184,12 +184,26 @@ async def summarize_and_persist(
     # how often the senior chose chat vs quiz vs shiritori.
     try:
         from datetime import datetime, UTC
+        import pytz
         from .activity_scoring import extract_activities
+
+        # Compute the call date in the senior's local timezone. Critical
+        # for Q2 (date orientation) scoring: a call placed at 8am JST is
+        # still "today" in JST but yesterday in UTC, and the scorer was
+        # previously comparing against UTC.
+        senior = await db.get_senior(senior_id)
+        tz_name = (senior.call_timezone if senior else None) or "Asia/Tokyo"
+        try:
+            tz = pytz.timezone(tz_name)
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.timezone("Asia/Tokyo")
+        call_date_local = datetime.now(UTC).astimezone(tz)
 
         all_results = await extract_activities(
             transcript,
             agent_name=agent_name,
-            call_date=datetime.now(UTC),
+            call_date_local=call_date_local,
+            senior=senior,
         )
         brain_results = [a for a in all_results if a.get("type") == "brain_training"]
         if brain_results:
